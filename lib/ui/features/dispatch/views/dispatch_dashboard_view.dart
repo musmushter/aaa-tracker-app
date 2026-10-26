@@ -1,0 +1,1035 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../../../../domain/models/dispatch_alert.dart';
+import '../../../../domain/models/dispatch_row.dart';
+import '../../../../domain/use_cases/dispatch_report_builder.dart';
+import '../../../core/widgets/phone_chips_bar.dart';
+import '../../safety/views/camera_lightbox_dialog.dart';
+import '../../shell/view_models/app_shell_view_model.dart';
+
+/// FSL Dispatch Tracker view modeled directly after `fsl_tracker/dashboard.html`.
+///
+/// Features:
+/// - Clean dark palette (`#14161A` bg, `#1E2127` card, `#33373F` border).
+/// - Active Alerts box (`#3A1517` bg, `4px solid #E5484D` left border) or muted
+///   `No active alerts.` bar.
+/// - Territory-grouped high-density **Active Drivers Table** with all 13 columns:
+///   `Driver | Call | Type | Status | Movement | In status | ETA (from feed) | Vehicle | Address | Dist (km) | GPS age | Flags | Report`
+class DispatchDashboardView extends StatefulWidget {
+  const DispatchDashboardView({super.key, required this.viewModel});
+
+  final AppShellViewModel viewModel;
+
+  @override
+  State<DispatchDashboardView> createState() => _DispatchDashboardViewState();
+}
+
+class _DispatchDashboardViewState extends State<DispatchDashboardView>
+    with AutomaticKeepAliveClientMixin {
+  String _searchQuery = '';
+  bool _alertsOnly = false;
+  final Set<String> _recentlyCopiedCallIds = {};
+
+  @override
+  bool get wantKeepAlive => true;
+
+  void _openTruckCameraPopup(BuildContext context, String motiveVehicleId) {
+    final vm = widget.viewModel;
+    final vehicle = vm.motiveVehicles
+        .where((v) => v.id == motiveVehicleId)
+        .firstOrNull;
+    if (vehicle == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => CameraLightboxDialog(
+        vehicles: [vehicle],
+        initialIndex: 0,
+        onRefreshCamera: vm.refreshSingleCamera,
+        resolveLatestVehicle: (id) =>
+            vm.motiveVehicles.where((v) => v.id == id).firstOrNull,
+        autoRefreshIfMissing: true,
+      ),
+    );
+  }
+
+  Future<void> _copyDispatchReport(BuildContext context, DispatchRow row) async {
+    final report = DispatchReportBuilder.buildReport(row);
+    await Clipboard.setData(ClipboardData(text: report));
+    if (!mounted) return;
+    setState(() => _recentlyCopiedCallIds.add(row.serviceAppointmentId));
+    Timer(const Duration(milliseconds: 1400), () {
+      if (mounted) {
+        setState(() => _recentlyCopiedCallIds.remove(row.serviceAppointmentId));
+      }
+    });
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Copied dispatch report for ${row.driverCleanName}'),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _copyText(BuildContext context, String text, String label) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Copied $label: $text'),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final vm = widget.viewModel;
+    final allRows = vm.dispatchRows;
+    final alerts = vm.dispatchAlerts;
+    final hasLive = vm.authService.hasFslSession && vm.lastFslError == null;
+
+    final filteredRows = allRows.where((r) {
+      if (_alertsOnly &&
+          r.alerts.isEmpty &&
+          !r.isRedAlert &&
+          !r.etaIsStale) {
+        return false;
+      }
+      if (_searchQuery.isNotEmpty) {
+        final q = _searchQuery.toLowerCase();
+        final matchDriver = r.driverRawName.toLowerCase().contains(q);
+        final matchCall = r.callId.toLowerCase().contains(q);
+        final matchSa = r.appointmentNumber.toLowerCase().contains(q);
+        final matchTerritory = r.territoryGroup.toLowerCase().contains(q);
+        final matchStatus = r.status.toLowerCase().contains(q);
+        final matchAddr = (r.pickupAddress ?? '').toLowerCase().contains(q);
+        final matchTruck =
+            (r.linkedTruck?.motiveVehicleName ?? '').toLowerCase().contains(q);
+        if (!matchDriver &&
+            !matchCall &&
+            !matchSa &&
+            !matchTerritory &&
+            !matchStatus &&
+            !matchAddr &&
+            !matchTruck) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+
+    // Group active rows by territoryGroup (matching dashboard.html lines 473-491)
+    final groups = <String, List<DispatchRow>>{};
+    for (final r in filteredRows) {
+      final g = r.territoryGroup.trim().isNotEmpty
+          ? r.territoryGroup.trim()
+          : 'Other';
+      groups.putIfAbsent(g, () => <DispatchRow>[]).add(r);
+    }
+    final sortedGroupNames = groups.keys.toList()..sort();
+    for (final g in sortedGroupNames) {
+      groups[g]!.sort((a, b) {
+        final aAlarm = a.alerts.isNotEmpty ? 0 : 1;
+        final bAlarm = b.alerts.isNotEmpty ? 0 : 1;
+        if (aAlarm != bAlarm) return aAlarm.compareTo(bAlarm);
+        return b.statusDurationMin.compareTo(a.statusDurationMin);
+      });
+    }
+
+    return Container(
+      color: const Color(0xFF14161A),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 1. Header Bar (matching dashboard.html <header>)
+            Container(
+              padding: const EdgeInsets.only(bottom: 10),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFF33373F)),
+                ),
+              ),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'FSL Dispatch Tracker',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFE8E8E8),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: hasLive
+                              ? const Color(0x2E46A758)
+                              : const Color(0x2EF5A623),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          hasLive ? 'live' : 'no data',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: hasLive
+                                ? const Color(0xFF86EFAC)
+                                : const Color(0xFFFCD34D),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '${allRows.length} active',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF8B909C),
+                        ),
+                      ),
+                      if (vm.lastFslUpdatedLabel != null)
+                        Text(
+                          'Updated ${vm.lastFslUpdatedLabel}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF8B909C),
+                          ),
+                        ),
+                      SizedBox(
+                        width: 220,
+                        child: TextField(
+                          onChanged: (v) =>
+                              setState(() => _searchQuery = v.trim()),
+                          style: const TextStyle(fontSize: 12),
+                          decoration: InputDecoration(
+                            hintText: 'Filter driver, call, territory...',
+                            hintStyle: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF8B909C),
+                            ),
+                            prefixIcon: const Icon(Icons.search, size: 15),
+                            isDense: true,
+                            filled: true,
+                            fillColor: const Color(0xFF1E2127),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 7,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(5),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF33373F),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(5),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF33373F),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () =>
+                            setState(() => _alertsOnly = !_alertsOnly),
+                        borderRadius: BorderRadius.circular(5),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _alertsOnly
+                                ? const Color(0x38E5484D)
+                                : const Color(0xFF1E2127),
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(
+                              color: _alertsOnly
+                                  ? const Color(0xFFE5484D)
+                                  : const Color(0xFF33373F),
+                            ),
+                          ),
+                          child: Text(
+                            'Alerts Only (${alerts.length})',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: _alertsOnly
+                                  ? const Color(0xFFFF8B8E)
+                                  : const Color(0xFF8B909C),
+                            ),
+                          ),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: const Color(0xFF1E2127),
+                          side: const BorderSide(color: Color(0xFF33373F)),
+                        ),
+                        onPressed: vm.isFslLoading
+                            ? null
+                            : () => vm.pollFslNow(fullShiftReload: false),
+                        icon: vm.isFslLoading
+                            ? const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.sync, size: 14),
+                        label: const Text(
+                          'Sync',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // 2. Active Alerts Box (matching dashboard.html .alerts-box)
+            _buildAlertsBox(alerts),
+
+            const SizedBox(height: 14),
+
+            // 3. Active Drivers Table Grouped by Service Territory
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E2127),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF33373F)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: filteredRows.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 28,
+                        horizontal: 16,
+                      ),
+                      child: Center(
+                        child: Text(
+                          vm.authService.hasFslSession
+                              ? 'No active drivers on calls.'
+                              : 'Sign in to Salesforce FSL in Connections (or click Auto-Detect from Open Browser) to start tracking.',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF8B909C),
+                          ),
+                        ),
+                      ),
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        const baseWidth = 1636.0;
+                        final tableWidth = math.max(
+                          constraints.maxWidth.isFinite
+                              ? constraints.maxWidth
+                              : baseWidth,
+                          baseWidth,
+                        );
+                        final scale = tableWidth / baseWidth;
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: tableWidth,
+                            child: _buildActiveDriversTable(
+                              context,
+                              sortedGroupNames,
+                              groups,
+                              tableWidth: tableWidth,
+                              scale: scale,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAlertsBox(List<DispatchAlert> alerts) {
+    if (alerts.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E2127),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFF33373F)),
+        ),
+        child: const Text(
+          'No active alerts.',
+          style: TextStyle(fontSize: 12.5, color: Color(0xFF8B909C)),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF3A1517),
+        borderRadius: BorderRadius.circular(6),
+        border: const Border(
+          top: BorderSide(color: Color(0xFFE5484D)),
+          right: BorderSide(color: Color(0xFFE5484D)),
+          bottom: BorderSide(color: Color(0xFFE5484D)),
+          left: BorderSide(color: Color(0xFFE5484D), width: 4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ACTIVE ALERTS (${alerts.length})',
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              color: Color(0xFFFF8B8E),
+            ),
+          ),
+          const SizedBox(height: 6),
+          ...alerts.map((a) {
+            final cleanDriver = a.driverName.split('*').first.trim();
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: RichText(
+                text: TextSpan(
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFFE8E8E8),
+                  ),
+                  children: [
+                    TextSpan(
+                      text: '[${a.type.code}] ',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFFF8B8E),
+                      ),
+                    ),
+                    TextSpan(
+                      text: cleanDriver,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    TextSpan(
+                      text: ' (Call ${a.callId}): ${a.detail}',
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveDriversTable(
+    BuildContext context,
+    List<String> sortedGroupNames,
+    Map<String, List<DispatchRow>> groups, {
+    required double tableWidth,
+    required double scale,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Table Header
+        Container(
+          width: tableWidth,
+          decoration: const BoxDecoration(
+            color: Color(0xFF252931),
+            border: Border(bottom: BorderSide(color: Color(0xFF33373F))),
+          ),
+          child: Row(
+            children: [
+              _headerCell('Driver', width: 225 * scale),
+              _headerCell('Call', width: 100 * scale),
+              _headerCell('Type', width: 115 * scale),
+              _headerCell('Status', width: 96 * scale),
+              _headerCell('Movement', width: 115 * scale),
+              _headerCell('In status', width: 76 * scale, alignRight: true),
+              _headerCell('ETA (from feed)', width: 175 * scale),
+              _headerCell('Vehicle', width: 145 * scale),
+              _headerCell('Address', width: 235 * scale),
+              _headerCell('Dist (km)', width: 72 * scale, alignRight: true),
+              _headerCell('GPS age', width: 68 * scale, alignRight: true),
+              _headerCell('Flags', width: 140 * scale),
+              _headerCell('Report', width: 74 * scale),
+            ],
+          ),
+        ),
+        // Territory Groups & Driver Rows
+        for (final g in sortedGroupNames) ...[
+          // Territory Group Header Row (matching tr.group-row td)
+          Container(
+            width: tableWidth,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: const BoxDecoration(
+              color: Color(0xFF2A2E37),
+              border: Border(bottom: BorderSide(color: Color(0xFF33373F))),
+            ),
+            child: Text(
+              '${g.toUpperCase()} — ${groups[g]!.length} driver(s)',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: Color(0xFFE8E8E8),
+              ),
+            ),
+          ),
+          for (final row in groups[g]!)
+            _buildDriverDataRow(
+              context,
+              row,
+              tableWidth: tableWidth,
+              scale: scale,
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _headerCell(String text, {required double width, bool alignRight = false}) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Text(
+          text.toUpperCase(),
+          textAlign: alignRight ? TextAlign.right : TextAlign.left,
+          style: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.4,
+            color: Color(0xFF8B909C),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDriverDataRow(
+    BuildContext context,
+    DispatchRow r, {
+    required double tableWidth,
+    required double scale,
+  }) {
+    final hasAlarm = r.alerts.isNotEmpty;
+    final hasWarn = !hasAlarm &&
+        (r.etaIsStale || r.isChainSecondLeg || r.isRedAlert);
+    final Color? rowBg = hasAlarm
+        ? const Color(0xFF3A1517)
+        : (hasWarn ? const Color(0xFF33290F) : null);
+
+    final link = r.linkedTruck;
+    final isCopied = _recentlyCopiedCallIds.contains(r.serviceAppointmentId);
+
+    return Container(
+      width: tableWidth,
+      decoration: BoxDecoration(
+        color: rowBg,
+        border: const Border(bottom: BorderSide(color: Color(0xFF33373F))),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // 1. Driver (Name + Phones + Linked Motive Truck)
+          _dataCell(
+            width: 225 * scale,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  r.driverCleanName,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFE8E8E8),
+                  ),
+                ),
+                if (r.driverPhones.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  PhoneChipsBar(phones: r.driverPhones, compact: true),
+                ],
+                if (link != null) ...[
+                  const SizedBox(height: 3),
+                  InkWell(
+                    onTap: () => _openTruckCameraPopup(
+                      context,
+                      link.motiveVehicleId,
+                    ),
+                    borderRadius: BorderRadius.circular(3),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0x2E46A758),
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(
+                          color: const Color(0xFF46A758).withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.videocam_rounded,
+                            size: 11,
+                            color: Color(0xFF86EFAC),
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              'Cam: ${link.motiveUnitNumber}',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF86EFAC),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // 2. Call
+          _dataCell(
+            width: 100 * scale,
+            child: InkWell(
+              onTap: () => _copyText(context, r.callId, 'Call ID'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    r.callId,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFE8E8E8),
+                    ),
+                  ),
+                  if (r.appointmentNumber.isNotEmpty)
+                    Text(
+                      r.appointmentNumber,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontFamily: 'monospace',
+                        color: Color(0xFF8B909C),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // 3. Type
+          _dataCell(
+            width: 115 * scale,
+            child: Text(
+              r.workType.isNotEmpty ? r.workType : '—',
+              style: const TextStyle(fontSize: 12, color: Color(0xFFE8E8E8)),
+            ),
+          ),
+
+          // 4. Status
+          _dataCell(
+            width: 96 * scale,
+            child: _buildStatusPill(r.status),
+          ),
+
+          // 5. Movement
+          _dataCell(
+            width: 115 * scale,
+            child: _buildMovementPill(r.movementState, r.movementDurationMin),
+          ),
+
+          // 6. In status
+          _dataCell(
+            width: 76 * scale,
+            alignRight: true,
+            child: _buildInStatusCell(r.statusDurationMin),
+          ),
+
+          // 7. ETA (from feed)
+          _dataCell(
+            width: 175 * scale,
+            child: _buildEtaCell(r),
+          ),
+
+          // 8. Vehicle
+          _dataCell(
+            width: 145 * scale,
+            child: Text(
+              (r.memberVehicle != null && r.memberVehicle!.isNotEmpty)
+                  ? r.memberVehicle!
+                  : '—',
+              style: const TextStyle(fontSize: 12, color: Color(0xFFE8E8E8)),
+            ),
+          ),
+
+          // 9. Address (Pickup + Drop-off)
+          _dataCell(
+            width: 235 * scale,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  (r.pickupAddress != null && r.pickupAddress!.isNotEmpty)
+                      ? r.pickupAddress!
+                      : '—',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFFE8E8E8),
+                  ),
+                ),
+                if (r.dropoffAddress != null &&
+                    r.dropoffAddress!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '↳ Drop-off: ${r.dropoffAddress}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF93C5FD),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // 10. Dist (km)
+          _dataCell(
+            width: 72 * scale,
+            alignRight: true,
+            child: Text(
+              r.distanceToCallKm != null
+                  ? r.distanceToCallKm!.toStringAsFixed(1)
+                  : '—',
+              style: TextStyle(
+                fontSize: 12,
+                fontFamily: 'monospace',
+                color: (r.distanceToCallKm != null && r.distanceToCallKm! > 2.0)
+                    ? const Color(0xFFFCD34D)
+                    : const Color(0xFFE8E8E8),
+              ),
+            ),
+          ),
+
+          // 11. GPS age
+          _dataCell(
+            width: 68 * scale,
+            alignRight: true,
+            child: Text(
+              r.gpsAgeMin != null ? '${r.gpsAgeMin!.round()}m' : '—',
+              style: TextStyle(
+                fontSize: 12,
+                fontFamily: 'monospace',
+                color: (r.gpsAgeMin != null && r.gpsAgeMin! > 10)
+                    ? const Color(0xFFFCD34D)
+                    : const Color(0xFFE8E8E8),
+              ),
+            ),
+          ),
+
+          // 12. Flags
+          _dataCell(
+            width: 140 * scale,
+            child: _buildFlagsCell(r),
+          ),
+
+          // 13. Report
+          _dataCell(
+            width: 74 * scale,
+            child: InkWell(
+              onTap: () => _copyDispatchReport(context, r),
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isCopied
+                      ? const Color(0xFF1F4E29)
+                      : const Color(0xFF2B303B),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: isCopied
+                        ? const Color(0xFF46A758)
+                        : const Color(0xFF4C5364),
+                  ),
+                ),
+                child: Text(
+                  isCopied ? 'Copied!' : 'Copy',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isCopied
+                        ? const Color(0xFF86EFAC)
+                        : const Color(0xFFE8E8E8),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dataCell({
+    required double width,
+    required Widget child,
+    bool alignRight = false,
+  }) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Align(
+          alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusPill(String status) {
+    final s = status.toLowerCase();
+    Color fg = const Color(0xFFE8E8E8);
+    Color bg = const Color(0x249CA3AF);
+    if (s.contains('en route')) {
+      fg = const Color(0xFF93C5FD);
+      bg = const Color(0x2E3B82F6);
+    } else if (s.contains('on location')) {
+      fg = const Color(0xFFFCD34D);
+      bg = const Color(0x2EF5A623);
+    } else if (s.contains('in tow')) {
+      fg = const Color(0xFFC4B5FD);
+      bg = const Color(0x338B5CF6);
+    } else if (s.contains('accepted') || s.contains('dispatched')) {
+      fg = const Color(0xFFD1D5DB);
+      bg = const Color(0x249CA3AF);
+    }
+    return _pill(status, fg: fg, bg: bg);
+  }
+
+  Widget _buildMovementPill(String? state, int? durationMin) {
+    if (state == null || state.isEmpty) {
+      return const Text(
+        '—',
+        style: TextStyle(fontSize: 12, color: Color(0xFF8B909C)),
+      );
+    }
+    final durStr = durationMin != null ? ' ${durationMin}m' : '';
+    if (state == 'MOVING') {
+      return _pill(
+        'MOVING$durStr',
+        fg: const Color(0xFF86EFAC),
+        bg: const Color(0x2E46A758),
+      );
+    }
+    if (state == 'STANDSTILL') {
+      return _pill(
+        'STANDSTILL$durStr',
+        fg: const Color(0xFFFCD34D),
+        bg: const Color(0x2EF5A623),
+      );
+    }
+    if (state == 'AT LOC') {
+      return _pill(
+        'AT LOC$durStr',
+        fg: const Color(0xFF93C5FD),
+        bg: const Color(0x2E3B82F6),
+      );
+    }
+    if (state == 'AT DROP OFF') {
+      return _pill(
+        'AT DROP OFF$durStr',
+        fg: const Color(0xFFC4B5FD),
+        bg: const Color(0x338B5CF6),
+      );
+    }
+    return Text(
+      '$state$durStr',
+      style: const TextStyle(fontSize: 11.5, color: Color(0xFFE8E8E8)),
+    );
+  }
+
+  Widget _buildInStatusCell(double durationMin) {
+    final mins = durationMin.round();
+    Color color = const Color(0xFFE8E8E8);
+    FontWeight weight = FontWeight.normal;
+    if (mins >= 25) {
+      color = const Color(0xFFFF8B8E);
+      weight = FontWeight.w700;
+    } else if (mins >= 15) {
+      color = const Color(0xFFFCD34D);
+      weight = FontWeight.w600;
+    }
+    return Text(
+      '$mins min',
+      style: TextStyle(
+        fontSize: 12,
+        fontFamily: 'monospace',
+        fontWeight: weight,
+        color: color,
+      ),
+    );
+  }
+
+  Widget _buildEtaCell(DispatchRow r) {
+    final text = r.etaText ?? r.etaWindowText;
+    if (text == null || text.isEmpty) {
+      return const Text(
+        '—',
+        style: TextStyle(
+          fontSize: 12,
+          fontFamily: 'monospace',
+          color: Color(0xFF8B909C),
+        ),
+      );
+    }
+    final display =
+        (r.etaText != null &&
+            r.etaWindowText != null &&
+            r.etaText != r.etaWindowText)
+        ? '${r.etaText} (${r.etaWindowText})'
+        : text;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          display,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontFamily: 'monospace',
+            color: r.etaIsStale
+                ? const Color(0xFFFCD34D)
+                : const Color(0xFFE8E8E8),
+          ),
+        ),
+        if (r.etaIsStale) ...[
+          const SizedBox(height: 2),
+          _pill(
+            'STALE • ${r.etaStaleReason ?? "CHECK"}',
+            fg: const Color(0xFFFCD34D),
+            bg: const Color(0x33F5A623),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFlagsCell(DispatchRow r) {
+    final pills = <Widget>[];
+    if (r.isRedAlert) {
+      pills.add(
+        _pill(
+          'RED ALERT',
+          fg: const Color(0xFFFF8B8E),
+          bg: const Color(0x38E5484D),
+        ),
+      );
+    }
+    if (r.isChainSecondLeg) {
+      pills.add(
+        _pill(
+          '2ND IN CHAIN',
+          fg: const Color(0xFFFCD34D),
+          bg: const Color(0x33F5A623),
+        ),
+      );
+    }
+    if (r.etaIsStale) {
+      pills.add(
+        _pill(
+          'STALE ETA',
+          fg: const Color(0xFFFCD34D),
+          bg: const Color(0x33F5A623),
+        ),
+      );
+    }
+    for (final a in r.alerts) {
+      pills.add(
+        _pill(
+          a.type.code,
+          fg: const Color(0xFFFF8B8E),
+          bg: const Color(0x38E5484D),
+        ),
+      );
+    }
+    if (pills.isEmpty) {
+      return const Text(
+        '—',
+        style: TextStyle(fontSize: 12, color: Color(0xFF8B909C)),
+      );
+    }
+    return Wrap(spacing: 4, runSpacing: 4, children: pills);
+  }
+
+  Widget _pill(String text, {required Color fg, required Color bg}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: fg,
+        ),
+      ),
+    );
+  }
+}
