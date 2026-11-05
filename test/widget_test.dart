@@ -707,13 +707,23 @@ void main() {
         durationMin: 18,
       );
 
-      // First evaluation triggers 1 new alert
+      // First evaluation triggers 1 new alert and records its active notification ID
       final firstCount = await service.processAlerts([sampleAlert]);
       expect(firstCount, equals(1));
+      expect(service.activeNotificationIdsByKey.length, equals(1));
 
-      // Immediate second evaluation with the same alert is suppressed by cooldown
+      // Immediate second evaluation with the same alert is suppressed by shift deduplication
       final secondCount = await service.processAlerts([sampleAlert]);
       expect(secondCount, equals(0));
+
+      // When the alert clears (empty list), its active notification is auto-dismissed
+      await service.processAlerts(const []);
+      expect(service.activeNotificationIdsByKey, isEmpty);
+
+      // Even if the exact same alert reappears a few minutes later on the same call,
+      // it is NOT re-sent (preventing repeated notification spam)
+      final reappearedCount = await service.processAlerts([sampleAlert]);
+      expect(reappearedCount, equals(0));
 
       // Disabling notifications suppresses new alerts too
       await service.setNotificationsEnabled(false);
@@ -731,6 +741,15 @@ void main() {
       );
       final mutedCount = await service.processAlerts([secondAlert]);
       expect(mutedCount, equals(0));
+
+      // Verify persistent notification toggles default to callbacks=false, camAge=true
+      expect(service.showCallbacksInSummary, isFalse);
+      expect(service.showCameraAgeInSummary, isTrue);
+
+      await service.setShowCallbacksInSummary(true);
+      await service.setShowCameraAgeInSummary(false);
+      expect(service.showCallbacksInSummary, isTrue);
+      expect(service.showCameraAgeInSummary, isFalse);
     });
   });
 }

@@ -26,6 +26,7 @@ class TrackerKeepAliveService : Service() {
         const val ACTION_START_OR_UPDATE = "com.aaatracker.aaa_tracker_app.START_OR_UPDATE"
         const val ACTION_STOP = "com.aaatracker.aaa_tracker_app.STOP"
         const val EXTRA_TITLE = "title"
+        const val EXTRA_COLLAPSED_BODY = "collapsedBody"
         const val EXTRA_BODY = "body"
         const val EXTRA_SUBTEXT = "subText"
     }
@@ -54,9 +55,10 @@ class TrackerKeepAliveService : Service() {
 
         val title = intent?.getStringExtra(EXTRA_TITLE) ?: "AAA Tracker Live"
         val body = intent?.getStringExtra(EXTRA_BODY) ?: "Monitoring active drivers & fleet safety..."
+        val collapsedBody = intent?.getStringExtra(EXTRA_COLLAPSED_BODY)?.takeIf { it.isNotEmpty() } ?: body
         val subText = intent?.getStringExtra(EXTRA_SUBTEXT) ?: ""
 
-        val notification = buildSummaryNotification(title, body, subText)
+        val notification = buildSummaryNotification(title, collapsedBody, body, subText)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
@@ -107,7 +109,12 @@ class TrackerKeepAliveService : Service() {
         }
     }
 
-    private fun buildSummaryNotification(title: String, body: String, subText: String): Notification {
+    private fun buildSummaryNotification(
+        title: String,
+        collapsedBody: String,
+        body: String,
+        subText: String
+    ): Notification {
         ensureSummaryChannel()
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -122,7 +129,7 @@ class TrackerKeepAliveService : Service() {
         val builder = NotificationCompat.Builder(this, SUMMARY_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
-            .setContentText(body)
+            .setContentText(collapsedBody)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setOngoing(true)
             .setOnlyAlertOnce(true)

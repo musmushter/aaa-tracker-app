@@ -44,24 +44,41 @@ class MotiveRepository {
       for (final fetched in list) {
         final existing = _vehiclesById[fetched.id];
         if (existing != null) {
-          // Preserve captured camera state & 3-strike timeout counter across fleet syncs
+          // Preserve captured camera state & 3-strike timeout counter across fleet syncs,
+          // but automatically clear a prior timeout-based powered-off lock if Motive
+          // reports the truck is now actively In Transit or Idling.
           final mergedMap = <String, String>{
-            ...existing.cameraPathsByAngle,
             ...fetched.cameraPathsByAngle,
+            ...existing.cameraPathsByAngle,
           };
+          final wokeUp =
+              !fetched.isPoweredOff &&
+              fetched.motionCategory != VehicleMotionCategory.stationary;
+          final effectivePoweredOff = wokeUp
+              ? false
+              : (fetched.isPoweredOff || existing.isPoweredOff);
+          final effectiveTimeouts = wokeUp ? 0 : existing.consecutiveTimeouts;
+          final existingTs = existing.lastRefreshedEpochMs;
+          final fetchedTs = fetched.lastRefreshedEpochMs;
+          final bestTs = (existingTs != null && fetchedTs != null)
+              ? (existingTs > fetchedTs ? existingTs : fetchedTs)
+              : (existingTs ?? fetchedTs);
+
           _vehiclesById[fetched.id] = fetched.copyWith(
+            eldIdentifier: fetched.eldIdentifier ?? existing.eldIdentifier,
             driverCameraPath:
-                fetched.driverCameraPath ?? existing.driverCameraPath,
-            roadCameraPath: fetched.roadCameraPath ?? existing.roadCameraPath,
+                existing.driverCameraPath ?? fetched.driverCameraPath,
+            roadCameraPath: existing.roadCameraPath ?? fetched.roadCameraPath,
             cameraPathsByAngle: mergedMap,
-            cameraStatusText: existing.lastRefreshedEpochMs != null
+            cameraStatusText: existingTs != null
                 ? existing.cameraStatusText
                 : fetched.cameraStatusText,
-            lastRefreshedEpochMs:
-                existing.lastRefreshedEpochMs ?? fetched.lastRefreshedEpochMs,
-            consecutiveTimeouts: existing.consecutiveTimeouts,
-            isPoweredOff: fetched.isPoweredOff || existing.isPoweredOff,
-            offlineReason: fetched.offlineReason ?? existing.offlineReason,
+            lastRefreshedEpochMs: bestTs,
+            consecutiveTimeouts: effectiveTimeouts,
+            isPoweredOff: effectivePoweredOff,
+            offlineReason: effectivePoweredOff
+                ? (fetched.offlineReason ?? existing.offlineReason)
+                : '',
             linkedFslDriver: existing.linkedFslDriver,
           );
         } else {
@@ -101,8 +118,14 @@ class MotiveRepository {
     int concurrency = 4,
   }) async {
     _cancelBatchRequested = false;
+    final seenIds = <String>{};
     final queue = targetVehicles
-        .where((v) => v.hasCamera && (includePoweredOff || !v.isPoweredOff))
+        .where(
+          (v) =>
+              v.hasCamera &&
+              (includePoweredOff || !v.isPoweredOff) &&
+              seenIds.add(v.id),
+        )
         .toList();
     if (queue.isEmpty) return;
 
@@ -114,11 +137,18 @@ class MotiveRepository {
       while (!_cancelBatchRequested) {
         if (nextIndex >= queue.length) break;
         final item = queue[nextIndex++];
-        final updated = await refreshSingleVehicleCamera(item.id);
-        completedCount++;
-        if (updated != null) {
-          onVehicleUpdated(updated, completedCount, total);
+        MotiveVehicle? updated;
+        try {
+          updated = await refreshSingleVehicleCamera(item.id);
+        } catch (_) {
+          updated = _vehiclesById[item.id] ?? item;
         }
+        completedCount++;
+        onVehicleUpdated(
+          updated ?? _vehiclesById[item.id] ?? item,
+          completedCount,
+          total,
+        );
       }
     }
 

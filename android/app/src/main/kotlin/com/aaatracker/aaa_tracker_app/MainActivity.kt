@@ -49,11 +49,19 @@ class MainActivity : FlutterActivity() {
                     showNativeNotification(id, title, body, playSound)
                     result.success(true)
                 }
+                "cancelNotification" -> {
+                    val id = call.argument<Int>("id")
+                    if (id != null && id != TrackerKeepAliveService.SUMMARY_NOTIFICATION_ID) {
+                        NotificationManagerCompat.from(this).cancel(id)
+                    }
+                    result.success(true)
+                }
                 "startOrUpdateKeepAlive" -> {
                     val title = call.argument<String>("title") ?: "AAA Tracker Live"
                     val body = call.argument<String>("body") ?: "Monitoring active calls & fleet safety..."
+                    val collapsedBody = call.argument<String>("collapsedBody") ?: body
                     val subText = call.argument<String>("subText") ?: ""
-                    startOrUpdateForegroundService(title, body, subText)
+                    startOrUpdateForegroundService(title, collapsedBody, body, subText)
                     result.success(true)
                 }
                 "stopKeepAlive" -> {
@@ -72,11 +80,17 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startOrUpdateForegroundService(title: String, body: String, subText: String) {
+    private fun startOrUpdateForegroundService(
+        title: String,
+        collapsedBody: String,
+        body: String,
+        subText: String
+    ) {
         try {
             val serviceIntent = Intent(this, TrackerKeepAliveService::class.java).apply {
                 action = TrackerKeepAliveService.ACTION_START_OR_UPDATE
                 putExtra(TrackerKeepAliveService.EXTRA_TITLE, title)
+                putExtra(TrackerKeepAliveService.EXTRA_COLLAPSED_BODY, collapsedBody)
                 putExtra(TrackerKeepAliveService.EXTRA_BODY, body)
                 putExtra(TrackerKeepAliveService.EXTRA_SUBTEXT, subText)
             }

@@ -288,12 +288,24 @@ class MotiveApiClient {
                 ..addAll(extracted.urlsByAngle);
             }
             if (extracted.receivedTime != null) {
-              initialReceivedTime ??= extracted.receivedTime;
-              latestFrameTime = extracted.receivedTime;
-              if (initialReceivedTime != null &&
-                  extracted.receivedTime!.isAfter(initialReceivedTime)) {
+              final recvTime = extracted.receivedTime!;
+              latestFrameTime = recvTime;
+              final ageSec = DateTime.now().difference(recvTime).inSeconds;
+              if (initialReceivedTime != null) {
+                if (recvTime.isAfter(initialReceivedTime) ||
+                    recvTime.millisecondsSinceEpoch !=
+                        initialReceivedTime.millisecondsSinceEpoch) {
+                  gotNewFrame = true;
+                  break;
+                }
+              } else if (ageSec <= 180 && bestUrlsByAngle.isNotEmpty) {
+                // No baseline existed prior to wakeup and a fresh (<3m) frame is ready
                 gotNewFrame = true;
                 break;
+              } else {
+                // Baseline was missing and server frame is old (>3m); set baseline now
+                // so subsequent poll iterations detect when the new frame arrives.
+                initialReceivedTime = recvTime;
               }
             }
 
@@ -306,7 +318,7 @@ class MotiveApiClient {
                 : null;
             final elapsedSec = DateTime.now().difference(pollStart).inSeconds;
             if (isPending == false &&
-                elapsedSec >= 10 &&
+                elapsedSec >= 8 &&
                 bestUrlsByAngle.isNotEmpty) {
               break;
             }
@@ -316,6 +328,7 @@ class MotiveApiClient {
     }
 
     final savedPathsByAngle = <String, String>{...vehicle.cameraPathsByAngle};
+    int downloadedCount = 0;
 
     if (bestUrlsByAngle.isNotEmpty) {
       await Future.wait(
@@ -331,6 +344,7 @@ class MotiveApiClient {
                 bytes: imgResp.bodyBytes,
               );
               savedPathsByAngle[entry.key] = savedPath;
+              downloadedCount++;
             }
           } catch (_) {
             // Keep existing cached snapshot if one angle download fails
@@ -344,7 +358,7 @@ class MotiveApiClient {
     final isFresh =
         gotNewFrame || (frameMs != null && ((nowMs - frameMs) / 60000.0) <= 3.5);
 
-    if (savedPathsByAngle.isEmpty) {
+    if (downloadedCount == 0) {
       final nextTimeouts = vehicle.consecutiveTimeouts + 1;
       final markOffline = nextTimeouts >= 3;
       return vehicle.copyWith(
@@ -363,7 +377,7 @@ class MotiveApiClient {
       driverCameraPath: savedPathsByAngle['driver'],
       roadCameraPath: savedPathsByAngle['road'],
       cameraPathsByAngle: savedPathsByAngle,
-      lastRefreshedEpochMs: frameMs ?? nowMs,
+      lastRefreshedEpochMs: nowMs,
       cameraStatusText: isFresh ? 'Live' : 'Captured',
       consecutiveTimeouts: 0,
       isPoweredOff: false,

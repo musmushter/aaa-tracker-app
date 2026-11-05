@@ -36,6 +36,13 @@ class AppTheme {
         foregroundColor: fgText,
         elevation: 0,
       ),
+      inputDecorationTheme: const InputDecorationTheme(
+        prefixIconConstraints: BoxConstraints(
+          minWidth: 32,
+          minHeight: 0,
+          maxHeight: 32,
+        ),
+      ),
     );
   }
 }

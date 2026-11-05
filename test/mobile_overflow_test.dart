@@ -50,6 +50,9 @@ void main() {
     FlutterError.onError = (details) {
       errors.add('[$currentPhase] ${details.exceptionAsString()}\n${details.toString()}');
     };
+    addTearDown(() {
+      FlutterError.onError = origOnError;
+    });
 
     final auth = AuthSessionService();
     await auth.saveFslSession(cookieHeader: 'sid=test');
@@ -173,23 +176,30 @@ void main() {
     vm.selectTab(2);
     await tester.pumpAndSettle();
 
-    currentPhase = 'Dialog_Groups';
-    await tester.tap(find.textContaining('Groups:'));
+    currentPhase = 'Sheet_MobileFilterAndSort';
+    await tester.tap(find.textContaining('Filter'));
     await tester.pumpAndSettle();
-    Navigator.of(tester.element(find.byType(AlertDialog))).pop();
-    await tester.pumpAndSettle();
-
-    currentPhase = 'Dialog_Orgs';
-    await tester.tap(find.textContaining('Org:'));
-    await tester.pumpAndSettle();
-    Navigator.of(tester.element(find.byType(AlertDialog))).pop();
+    expect(
+      find.text('Camera Filters, Sort & Auto-Refresh'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Apply & Close'));
     await tester.pumpAndSettle();
 
-    currentPhase = 'Dialog_StatusFilters';
-    await tester.tap(find.textContaining('Filters'));
+    currentPhase = 'Menu_NotificationSettings';
+    await tester.tap(find.byTooltip('Alerts & Persistent Notification Settings'));
     await tester.pumpAndSettle();
-    Navigator.of(tester.element(find.byType(AlertDialog))).pop();
+    expect(find.textContaining('Show Camera Update Age'), findsOneWidget);
+    expect(find.text('Show Unchecked Callbacks Count'), findsOneWidget);
+    await tester.tap(
+      find.byWidgetPredicate(
+        (w) =>
+            w is CheckedPopupMenuItem<String> &&
+            w.value == 'toggle_summary_callbacks',
+      ),
+    );
     await tester.pumpAndSettle();
+    expect(vm.showCallbacksInSummary, isTrue);
 
     currentPhase = 'Dialog_AuthSettings';
     showDialog<void>(
@@ -215,6 +225,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    // Verify navigation arrows in CameraLightboxDialog stay in the exact same
+    // screen position when stepping between trucks with different name lengths.
+    final prevBtnFinder = find.byTooltip('Previous Truck');
+    final nextBtnFinder = find.byTooltip('Next Truck');
+    final initialPrevPos = tester.getCenter(prevBtnFinder);
+    final initialNextPos = tester.getCenter(nextBtnFinder);
+    await tester.tap(nextBtnFinder);
+    await tester.pumpAndSettle();
+    final afterPrevPos = tester.getCenter(prevBtnFinder);
+    final afterNextPos = tester.getCenter(nextBtnFinder);
+
     Navigator.of(tester.element(find.byType(CameraLightboxDialog))).pop();
     await tester.pumpAndSettle();
 
@@ -222,9 +244,7 @@ void main() {
     FlutterError.onError = origOnError;
 
     expect(errors, isEmpty);
-    if (errors.isNotEmpty) {
-      // ignore: avoid_print
-      expect(errors, isEmpty);
-    }
+    expect(afterPrevPos, equals(initialPrevPos));
+    expect(afterNextPos, equals(initialNextPos));
   });
 }

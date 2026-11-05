@@ -143,249 +143,946 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
       });
     }
 
+    final isWide = MediaQuery.sizeOf(context).width >= 800;
+
     return Container(
       color: const Color(0xFF14161A),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
+        padding: EdgeInsets.fromLTRB(
+          isWide ? 18 : 10,
+          isWide ? 14 : 8,
+          isWide ? 18 : 10,
+          24,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. Header Bar (matching dashboard.html <header>)
-            Container(
-              padding: const EdgeInsets.only(bottom: 10),
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Color(0xFF33373F)),
-                ),
-              ),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Flexible(
-                        child: Text(
-                          'FSL Dispatch Tracker',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFFE8E8E8),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: hasLive
-                              ? const Color(0x2E46A758)
-                              : const Color(0x2EF5A623),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                        child: Text(
-                          hasLive ? 'live' : 'no data',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: hasLive
-                                ? const Color(0xFF86EFAC)
-                                : const Color(0xFFFCD34D),
-                          ),
-                        ),
-                      ),
-                    ],
+            // 1. Header Bar (Responsive: Compact on Phone, Full on Desktop)
+            if (isWide)
+              Container(
+                padding: const EdgeInsets.only(bottom: 10),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Color(0xFF33373F)),
                   ),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      ValueListenableBuilder<int>(
-                        valueListenable: vm.clockTickNotifier,
-                        builder: (context, _, _) {
-                          return Text(
-                            '${vm.accountClockText}  •  ${allRows.length} active',
+                ),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Flexible(
+                          child: Text(
+                            'FSL Dispatch Tracker',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFE8E8E8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: hasLive
+                                ? const Color(0x2E46A758)
+                                : const Color(0x2EF5A623),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Text(
+                            hasLive ? 'live' : 'no data',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: hasLive
+                                  ? const Color(0xFF86EFAC)
+                                  : const Color(0xFFFCD34D),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        ValueListenableBuilder<int>(
+                          valueListenable: vm.clockTickNotifier,
+                          builder: (context, _, _) {
+                            return Text(
+                              '${vm.accountClockText}  •  ${allRows.length} active',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF8B909C),
+                              ),
+                            );
+                          },
+                        ),
+                        if (vm.lastFslUpdatedLabel != null)
+                          Text(
+                            'Updated ${vm.lastFslUpdatedLabel}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: Color(0xFF8B909C),
                             ),
-                          );
-                        },
-                      ),
-                      if (vm.lastFslUpdatedLabel != null)
-                        Text(
-                          'Updated ${vm.lastFslUpdatedLabel}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF8B909C),
                           ),
-                        ),
-                      SizedBox(
-                        width: 220,
-                        child: TextField(
-                          onChanged: (v) =>
-                              setState(() => _searchQuery = v.trim()),
-                          style: const TextStyle(fontSize: 12),
-                          decoration: InputDecoration(
-                            hintText: 'Filter driver, call, territory...',
-                            hintStyle: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF8B909C),
-                            ),
-                            prefixIcon: const Icon(Icons.search, size: 15),
-                            isDense: true,
-                            filled: true,
-                            fillColor: const Color(0xFF1E2127),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 7,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(5),
-                              borderSide: const BorderSide(
-                                color: Color(0xFF33373F),
+                        SizedBox(
+                          width: 220,
+                          child: TextField(
+                            onChanged: (v) =>
+                                setState(() => _searchQuery = v.trim()),
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              hintText: 'Filter driver, call, territory...',
+                              hintStyle: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF8B909C),
                               ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(5),
-                              borderSide: const BorderSide(
-                                color: Color(0xFF33373F),
+                              prefixIcon: const Icon(Icons.search, size: 15),
+                              isDense: true,
+                              filled: true,
+                              fillColor: const Color(0xFF1E2127),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 7,
                               ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      InkWell(
-                        onTap: () =>
-                            setState(() => _alertsOnly = !_alertsOnly),
-                        borderRadius: BorderRadius.circular(5),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _alertsOnly
-                                ? const Color(0x38E5484D)
-                                : const Color(0xFF1E2127),
-                            borderRadius: BorderRadius.circular(5),
-                            border: Border.all(
-                              color: _alertsOnly
-                                  ? const Color(0xFFE5484D)
-                                  : const Color(0xFF33373F),
-                            ),
-                          ),
-                          child: Text(
-                            'Alerts Only (${alerts.length})',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                              color: _alertsOnly
-                                  ? const Color(0xFFFF8B8E)
-                                  : const Color(0xFF8B909C),
-                            ),
-                          ),
-                        ),
-                      ),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          backgroundColor: const Color(0xFF1E2127),
-                          side: const BorderSide(color: Color(0xFF33373F)),
-                        ),
-                        onPressed: vm.isFslLoading
-                            ? null
-                            : () => vm.pollFslNow(fullShiftReload: false),
-                        icon: vm.isFslLoading
-                            ? const SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(5),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFF33373F),
                                 ),
-                              )
-                            : const Icon(Icons.sync, size: 14),
-                        label: const Text(
-                          'Sync',
-                          style: TextStyle(fontSize: 12),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(5),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFF33373F),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+                        InkWell(
+                          onTap: () =>
+                              setState(() => _alertsOnly = !_alertsOnly),
+                          borderRadius: BorderRadius.circular(5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _alertsOnly
+                                  ? const Color(0x38E5484D)
+                                  : const Color(0xFF1E2127),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: _alertsOnly
+                                    ? const Color(0xFFE5484D)
+                                    : const Color(0xFF33373F),
+                              ),
+                            ),
+                            child: Text(
+                              'Alerts Only (${alerts.length})',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: _alertsOnly
+                                    ? const Color(0xFFFF8B8E)
+                                    : const Color(0xFF8B909C),
+                              ),
+                            ),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: const Color(0xFF1E2127),
+                            side: const BorderSide(color: Color(0xFF33373F)),
+                          ),
+                          onPressed: vm.isFslLoading
+                              ? null
+                              : () => vm.pollFslNow(fullShiftReload: false),
+                          icon: vm.isFslLoading
+                              ? const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.sync, size: 14),
+                          label: const Text(
+                            'Sync',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              )
+            else
+              _buildMobileHeader(vm, allRows.length, alerts.length, hasLive),
 
-            const SizedBox(height: 12),
+            SizedBox(height: isWide ? 12 : 8),
 
             // 2. Active Alerts Box (matching dashboard.html .alerts-box)
             _buildAlertsBox(alerts),
 
-            const SizedBox(height: 14),
+            SizedBox(height: isWide ? 14 : 10),
 
-            // 3. Active Drivers Table Grouped by Service Territory
-            Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E2127),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFF33373F)),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: filteredRows.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 28,
-                        horizontal: 16,
-                      ),
-                      child: Center(
-                        child: Text(
-                          vm.authService.hasFslSession
-                              ? 'No active drivers on calls.'
-                              : 'Sign in to Salesforce FSL in Connections (or click Auto-Detect from Open Browser) to start tracking.',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF8B909C),
-                          ),
+            // 3. Active Drivers Section (Desktop Table vs Mobile Full-Field Cards)
+            if (filteredRows.isEmpty)
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E2127),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFF33373F)),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 28,
+                  horizontal: 16,
+                ),
+                child: Center(
+                  child: Text(
+                    vm.authService.hasFslSession
+                        ? 'No active drivers on calls.'
+                        : 'Sign in to Salesforce FSL in Connections to start tracking.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF8B909C),
+                    ),
+                  ),
+                ),
+              )
+            else if (isWide)
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E2127),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFF33373F)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    const baseWidth = 1480.0;
+                    final tableWidth = math.max(
+                      constraints.maxWidth.isFinite
+                          ? constraints.maxWidth
+                          : baseWidth,
+                      baseWidth,
+                    );
+                    final scale = tableWidth / baseWidth;
+                    return SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: tableWidth,
+                        child: _buildActiveDriversTable(
+                          context,
+                          sortedGroupNames,
+                          groups,
+                          tableWidth: tableWidth,
+                          scale: scale,
                         ),
                       ),
-                    )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        const baseWidth = 1480.0;
-                        final tableWidth = math.max(
-                          constraints.maxWidth.isFinite
-                              ? constraints.maxWidth
-                              : baseWidth,
-                          baseWidth,
-                        );
-                        final scale = tableWidth / baseWidth;
-                        return SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: tableWidth,
-                            child: _buildActiveDriversTable(
-                              context,
-                              sortedGroupNames,
-                              groups,
-                              tableWidth: tableWidth,
-                              scale: scale,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
+                    );
+                  },
+                ),
+              )
+            else
+              _buildMobileDriversList(context, sortedGroupNames, groups),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMobileHeader(
+    AppShellViewModel vm,
+    int activeCount,
+    int alertCount,
+    bool hasLive,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 36,
+                child: TextField(
+                  onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                  textAlignVertical: TextAlignVertical.center,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    constraints: const BoxConstraints.tightFor(height: 36),
+                    hintText: 'Search driver, call, address, truck...',
+                    hintStyle: const TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFF8B909C),
+                    ),
+                    prefixIcon: const Icon(Icons.search, size: 16),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 34,
+                      minHeight: 36,
+                      maxHeight: 36,
+                    ),
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFF1E2127),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: Color(0xFF33373F)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: Color(0xFF33373F)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            InkWell(
+              onTap: () => setState(() => _alertsOnly = !_alertsOnly),
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                height: 36,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: _alertsOnly
+                      ? const Color(0x38E5484D)
+                      : const Color(0xFF1E2127),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: _alertsOnly
+                        ? const Color(0xFFE5484D)
+                        : const Color(0xFF33373F),
+                  ),
+                ),
+                child: Text(
+                  'Alerts ($alertCount)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _alertsOnly
+                        ? const Color(0xFFFF8B8E)
+                        : const Color(0xFF8B909C),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: IconButton.outlined(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                tooltip: 'Sync FSL Now',
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E2127),
+                  side: const BorderSide(color: Color(0xFF33373F)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                onPressed: vm.isFslLoading
+                    ? null
+                    : () => vm.pollFslNow(fullShiftReload: false),
+                icon: vm.isFslLoading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync, size: 16),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: hasLive
+                    ? const Color(0x2E46A758)
+                    : const Color(0x2EF5A623),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                hasLive ? 'LIVE' : 'NO DATA',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: hasLive
+                      ? const Color(0xFF86EFAC)
+                      : const Color(0xFFFCD34D),
+                ),
+              ),
+            ),
+            Text(
+              '$activeCount active driver${activeCount == 1 ? "" : "s"}',
+              style: const TextStyle(fontSize: 11.5, color: Color(0xFF8B909C)),
+            ),
+            if (vm.lastFslUpdatedLabel != null)
+              Text(
+                '• Updated ${vm.lastFslUpdatedLabel}',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: Color(0xFF8B909C),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileDriversList(
+    BuildContext context,
+    List<String> sortedGroupNames,
+    Map<String, List<DispatchRow>> groups,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final g in sortedGroupNames) ...[
+          Container(
+            margin: const EdgeInsets.only(top: 6, bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2A2E37),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF33373F)),
+            ),
+            child: Text(
+              '${g.toUpperCase()} — ${groups[g]!.length} driver(s)',
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: Color(0xFFE8E8E8),
+              ),
+            ),
+          ),
+          for (final row in groups[g]!)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _buildMobileDriverCard(context, row),
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMobileDriverCard(BuildContext context, DispatchRow r) {
+    final hasAlarm = r.alerts.isNotEmpty;
+    final link = r.linkedTruck;
+    final isCopied = _recentlyCopiedCallIds.contains(r.serviceAppointmentId);
+    final mins = r.statusDurationMin.round();
+    final inStatusLabel = mins >= 60
+        ? '${mins ~/ 60}h ${mins % 60}m'
+        : '$mins min';
+    final etaWindow = r.etaWindowText ?? r.etaText;
+
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: hasAlarm ? const Color(0xFF3A1517) : const Color(0xFF1E2127),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: hasAlarm ? const Color(0xFFE5484D) : const Color(0xFF33373F),
+          width: hasAlarm ? 1.5 : 1.0,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1: Driver Name (left) + Fixed Cam Button + Fixed Report Button (right)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  r.driverCleanName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFE8E8E8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (link != null) ...[
+                InkWell(
+                  onTap: () => _openTruckCameraPopup(
+                    context,
+                    link.motiveVehicleId,
+                  ),
+                  borderRadius: BorderRadius.circular(5),
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 58),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0x2E46A758),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: const Color(
+                          0xFF46A758,
+                        ).withValues(alpha: 0.6),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.videocam_rounded,
+                          size: 12,
+                          color: Color(0xFF86EFAC),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          link.motiveUnitNumber,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF86EFAC),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              InkWell(
+                onTap: () => _copyDispatchReport(context, r),
+                borderRadius: BorderRadius.circular(5),
+                child: Container(
+                  width: 64,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF14161A),
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(
+                      color: isCopied
+                          ? const Color(0xFF46A758)
+                          : const Color(0xFF33373F),
+                    ),
+                  ),
+                  child: Text(
+                    isCopied ? 'Copied!' : 'Report',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: isCopied
+                          ? const Color(0xFF46A758)
+                          : const Color(0xFFE8E8E8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Row 2: Active Alerts & Red Alert Flags (if any)
+          if (r.isRedAlert || r.alerts.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            _buildFlagsCell(r),
+            for (final a in r.alerts)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  '⚠ ${a.detail}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFFFB4B6),
+                  ),
+                ),
+              ),
+          ],
+
+          const SizedBox(height: 7),
+
+          // Row 3 & 4: Fixed-Column 2x4 Grid (Status | Motion | In Status | GPS  /  Call | Type | ETA | Dist)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF16181D),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF2A2E37)),
+            ),
+            child: Column(
+              children: [
+                // Grid Row 1: STATUS | MOTION | IN STATUS | GPS
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 29,
+                      child: _buildMobileGridCell(
+                        label: 'STATUS',
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: _buildStatusPill(r.status),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 29,
+                      child: _buildMobileGridCell(
+                        label: 'MOTION',
+                        child: (r.movementState != null &&
+                                r.movementState!.isNotEmpty)
+                            ? Align(
+                                alignment: Alignment.centerLeft,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: _buildMovementPill(
+                                    r.movementState,
+                                    r.movementDurationMin,
+                                  ),
+                                ),
+                              )
+                            : const Text(
+                                '—',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 23,
+                      child: _buildMobileGridCell(
+                        label: 'IN STATUS',
+                        child: Text(
+                          inStatusLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFE8E8E8),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 19,
+                      child: _buildMobileGridCell(
+                        label: 'GPS AGE',
+                        child: Text(
+                          r.gpsAgeMin != null ? '${r.gpsAgeMin!.round()}m' : '—',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            color: r.gpsAgeMin == null
+                                ? const Color(0xFF64748B)
+                                : (r.gpsAgeMin! > 10
+                                      ? const Color(0xFFE5484D)
+                                      : const Color(0xFF46A758)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 5),
+                  child: Divider(height: 1, color: Color(0xFF262A33)),
+                ),
+                // Grid Row 2: CALL ID | WORK TYPE | ETA | DISTANCE
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 23,
+                      child: _buildMobileGridCell(
+                        label: r.isChainSecondLeg ? 'CALL (2ND)' : 'CALL ID',
+                        child: InkWell(
+                          onTap: () => _copyText(context, r.callId, 'Call ID'),
+                          borderRadius: BorderRadius.circular(4),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.copy_rounded,
+                                  size: 11,
+                                  color: Color(0xFF93C5FD),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  r.callId,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFE8E8E8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 41,
+                      child: _buildMobileGridCell(
+                        label: 'TYPE',
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            r.workType.isNotEmpty ? r.workType : '—',
+                            maxLines: 1,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFCBD5E1),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 20,
+                      child: _buildMobileGridCell(
+                        label: r.etaIsStale ? 'ETA (STALE)' : 'ETA',
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            (etaWindow != null && etaWindow.isNotEmpty)
+                                ? etaWindow
+                                : '—',
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: (etaWindow == null || etaWindow.isEmpty)
+                                  ? const Color(0xFF64748B)
+                                  : (r.etaIsStale
+                                        ? const Color(0xFFFF8B8E)
+                                        : const Color(0xFF93C5FD)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 16,
+                      child: _buildMobileGridCell(
+                        label: 'DIST',
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            r.distanceToCallKm != null
+                                ? '${r.distanceToCallKm!.toStringAsFixed(1)} km'
+                                : '—',
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w600,
+                              color: r.distanceToCallKm != null
+                                  ? const Color(0xFFCBD5E1)
+                                  : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Row 5: Full Member Vehicle & Full Pickup / Drop-off Addresses (Never Truncated!)
+          if ((r.memberVehicle != null && r.memberVehicle!.isNotEmpty) ||
+              (r.pickupAddress != null && r.pickupAddress!.isNotEmpty) ||
+              (r.dropoffAddress != null && r.dropoffAddress!.isNotEmpty)) ...[
+            const SizedBox(height: 7),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF14161A),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF2A2E37)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (r.memberVehicle != null && r.memberVehicle!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.directions_car_outlined,
+                            size: 14,
+                            color: Color(0xFF93C5FD),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              r.memberVehicle!,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFFE8E8E8),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (r.pickupAddress != null && r.pickupAddress!.isNotEmpty)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: Color(0xFF86EFAC),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            r.pickupAddress!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFE8E8E8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (r.dropoffAddress != null &&
+                      r.dropoffAddress!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.flag_outlined,
+                          size: 14,
+                          color: Color(0xFFFCD34D),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Drop-off: ${r.dropoffAddress!}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFCBD5E1),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+
+          // Row 6: Driver Phone Numbers
+          if (r.driverPhones.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            PhoneChipsBar(phones: r.driverPhones, compact: true),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileGridCell({required String label, required Widget child}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 9.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.3,
+            color: Color(0xFF7B8290),
+          ),
+        ),
+        const SizedBox(height: 2.5),
+        SizedBox(
+          height: 20,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: child,
+          ),
+        ),
+      ],
     );
   }
 

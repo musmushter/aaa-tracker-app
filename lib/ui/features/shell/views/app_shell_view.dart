@@ -54,19 +54,50 @@ class AppShellView extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Flexible(
-                    flex: isWide ? 0 : 1,
-                    child: Text(
-                      isWide ? 'AAA Dispatch & Safety' : 'AAA Tracker',
+                  if (!isWide) ...[
+                    const Expanded(
+                      child: Text(
+                        'AAA Tracker',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFE8E8E8),
+                        ),
+                      ),
+                    ),
+                    if (viewModel.dispatchAlerts.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE5484D),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '⚠ ${viewModel.dispatchAlerts.length}',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ] else ...[
+                    const Text(
+                      'AAA Dispatch & Safety',
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFFE8E8E8),
                       ),
                     ),
-                  ),
-                  if (isWide) ...[
                     const SizedBox(width: 20),
                     _NavTabButton(
                       label: 'Dispatch Tracker',
@@ -78,16 +109,21 @@ class AppShellView extends StatelessWidget {
                     const SizedBox(width: 6),
                     _NavTabButton(
                       label: 'Callbacks (12h)',
-                      badgeCount: viewModel.clearedCalls.length,
+                      badgeCount: 0,
                       selected: viewModel.selectedTabIndex == 1,
                       onTap: () => viewModel.selectTab(1),
                     ),
                     const SizedBox(width: 6),
-                    _NavTabButton(
-                      label: 'Safety Cameras',
-                      badgeCount: viewModel.motiveVehicles.length,
-                      selected: viewModel.selectedTabIndex == 2,
-                      onTap: () => viewModel.selectTab(2),
+                    ValueListenableBuilder<int>(
+                      valueListenable: viewModel.filteredCameraCountNotifier,
+                      builder: (context, filteredCamCount, _) {
+                        return _NavTabButton(
+                          label: 'Safety Cameras',
+                          badgeCount: filteredCamCount,
+                          selected: viewModel.selectedTabIndex == 2,
+                          onTap: () => viewModel.selectTab(2),
+                        );
+                      },
                     ),
                   ],
                   const SizedBox(width: 6),
@@ -134,22 +170,28 @@ class AppShellView extends StatelessWidget {
                       );
                     },
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      viewModel.statusBannerText,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        color: Color(0xFF8B909C),
+                  if (isWide) ...[
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        viewModel.statusBannerText,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF8B909C),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
+                  ],
+                  const SizedBox(width: 6),
                   // Alert Notifications & Background Keep-Alive Menu Button
                   PopupMenuButton<String>(
-                    tooltip: 'Alerts & Background Keep-Alive',
+                    tooltip: 'Alerts & Persistent Notification Settings',
                     color: const Color(0xFF1E2127),
+                    constraints: const BoxConstraints(
+                      minWidth: 240,
+                      maxWidth: 320,
+                    ),
                     onSelected: (value) {
                       if (value == 'toggle_enabled') {
                         viewModel.setAlertsNotificationsEnabled(
@@ -162,6 +204,14 @@ class AppShellView extends StatelessWidget {
                       } else if (value == 'toggle_keep_alive') {
                         viewModel.setAndroidKeepAliveEnabled(
                           !viewModel.androidKeepAliveEnabled,
+                        );
+                      } else if (value == 'toggle_summary_callbacks') {
+                        viewModel.setShowCallbacksInSummary(
+                          !viewModel.showCallbacksInSummary,
+                        );
+                      } else if (value == 'toggle_summary_cam_age') {
+                        viewModel.setShowCameraAgeInSummary(
+                          !viewModel.showCameraAgeInSummary,
                         );
                       } else if (value == 'unrestricted_battery') {
                         viewModel.requestUnrestrictedAndroidBattery();
@@ -186,17 +236,33 @@ class AppShellView extends StatelessWidget {
                           style: TextStyle(fontSize: 13),
                         ),
                       ),
+                      const PopupMenuDivider(),
+                      CheckedPopupMenuItem<String>(
+                        value: 'toggle_keep_alive',
+                        checked: viewModel.androidKeepAliveEnabled,
+                        child: const Text(
+                          'Persistent Live Notification & Keep-Alive',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      CheckedPopupMenuItem<String>(
+                        value: 'toggle_summary_cam_age',
+                        checked: viewModel.showCameraAgeInSummary,
+                        child: Text(
+                          'Show Camera Update Age (${viewModel.cameraLastUpdateAgeText})',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      CheckedPopupMenuItem<String>(
+                        value: 'toggle_summary_callbacks',
+                        checked: viewModel.showCallbacksInSummary,
+                        child: const Text(
+                          'Show Unchecked Callbacks Count',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
                       if (!kIsWeb &&
                           defaultTargetPlatform == TargetPlatform.android) ...[
-                        const PopupMenuDivider(),
-                        CheckedPopupMenuItem<String>(
-                          value: 'toggle_keep_alive',
-                          checked: viewModel.androidKeepAliveEnabled,
-                          child: const Text(
-                            'Keep Active in Background & Summary Notification',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
                         PopupMenuItem<String>(
                           value: 'unrestricted_battery',
                           child: Row(
@@ -236,9 +302,11 @@ class AppShellView extends StatelessWidget {
                               color: Color(0xFF93C5FD),
                             ),
                             SizedBox(width: 8),
-                            Text(
-                              'Send Test Notification',
-                              style: TextStyle(fontSize: 13),
+                            Flexible(
+                              child: Text(
+                                'Send Test Notification',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
                           ],
                         ),
@@ -311,6 +379,7 @@ class AppShellView extends StatelessWidget {
           bottomNavigationBar: isWide
               ? null
               : NavigationBar(
+                  height: 58,
                   backgroundColor: const Color(0xFF1E2127),
                   selectedIndex: viewModel.selectedTabIndex,
                   onDestinationSelected: viewModel.selectTab,
@@ -323,19 +392,20 @@ class AppShellView extends StatelessWidget {
                       ),
                       label: 'Dispatch',
                     ),
-                    NavigationDestination(
-                      icon: Badge(
-                        isLabelVisible: viewModel.clearedCalls.isNotEmpty,
-                        label: Text('${viewModel.clearedCalls.length}'),
-                        child: const Icon(Icons.phone_callback_rounded),
-                      ),
+                    const NavigationDestination(
+                      icon: Icon(Icons.phone_callback_rounded),
                       label: 'Callbacks',
                     ),
                     NavigationDestination(
-                      icon: Badge(
-                        isLabelVisible: viewModel.motiveVehicles.isNotEmpty,
-                        label: Text('${viewModel.motiveVehicles.length}'),
-                        child: const Icon(Icons.videocam_rounded),
+                      icon: ValueListenableBuilder<int>(
+                        valueListenable: viewModel.filteredCameraCountNotifier,
+                        builder: (context, filteredCamCount, _) {
+                          return Badge(
+                            isLabelVisible: filteredCamCount > 0,
+                            label: Text('$filteredCamCount'),
+                            child: const Icon(Icons.videocam_rounded),
+                          );
+                        },
                       ),
                       label: 'Safety Cams',
                     ),

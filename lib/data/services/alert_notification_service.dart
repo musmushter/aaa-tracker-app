@@ -25,10 +25,18 @@ class AlertNotificationService {
   static const String _prefEnabledKey = 'alerts_notifications_enabled_v1';
   static const String _prefSoundKey = 'alerts_sound_enabled_v1';
   static const String _prefKeepAliveKey = 'android_keep_alive_enabled_v1';
+  static const String _prefShowCallbacksInSummaryKey =
+      'alerts_summary_show_callbacks_v1';
+  static const String _prefShowCamAgeInSummaryKey =
+      'alerts_summary_show_cam_age_v1';
   static const String _prefNotifiedMapKey = 'alerts_notified_keys_v1';
+  static const String _prefActiveNotifIdsKey = 'alerts_active_notif_ids_v1';
+  static const int _overflowSummaryNotifId = 99000;
 
-  /// Minimum cooldown before re-notifying the exact same `(alertType, callId, driverId)`.
-  static const int cooldownMs = 15 * 60 * 1000; // 15 minutes
+  /// Suppresses duplicate popups for the same `(alertType, callId, driverId)`
+  /// for the duration of a shift (6 hours) so the same alert is never spammed
+  /// every few minutes.
+  static const int cooldownMs = 6 * 60 * 60 * 1000; // 6 hours
 
   bool _notificationsEnabled = true;
   bool get notificationsEnabled => _notificationsEnabled;
@@ -39,12 +47,42 @@ class AlertNotificationService {
   bool _keepAliveEnabled = true;
   bool get keepAliveEnabled => _keepAliveEnabled;
 
+  bool _showCallbacksInSummary = false;
+  bool get showCallbacksInSummary => _showCallbacksInSummary;
+
+  bool _showCameraAgeInSummary = true;
+  bool get showCameraAgeInSummary => _showCameraAgeInSummary;
+
   bool _batteryOptimizationIgnored = false;
   bool get batteryOptimizationIgnored => _batteryOptimizationIgnored;
 
-  /// Maps `alertKey` -> `epochMs` when last notified.
+  /// Maps `alertKey` -> `epochMs` when first notified during the current shift.
   final Map<String, int> _notifiedAlerts = {};
+
+  /// Maps currently active `alertKey` -> deterministic OS `notificationId` so
+  /// notifications auto-dismiss as soon as the alert is resolved.
+  final Map<String, int> _activeNotificationIdsByKey = {};
+  bool _overflowNotificationActive = false;
   bool _initialized = false;
+
+  /// Exposed for testing: currently active non-persistent notification IDs keyed by alert key.
+  Map<String, int> get activeNotificationIdsByKey =>
+      Map.unmodifiable(_activeNotificationIdsByKey);
+
+  static String _alertKey(DispatchAlert alert) =>
+      '${alert.type.code}:${alert.callId}:${alert.driverId}';
+
+  /// Produces a stable notification ID in `10000..89999` (never colliding with
+  /// `42000` persistent summary or `99000` overflow notification).
+  static int _notificationIdForKey(String key) {
+    int hash = 0x811c9dc5;
+    for (int i = 0; i < key.length; i++) {
+      hash ^= key.codeUnitAt(i);
+      hash = (hash * 0x01000193) & 0x7fffffff;
+    }
+    final id = 10000 + (hash % 80000);
+    return id == 42000 ? 42001 : id;
+  }
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -54,6 +92,10 @@ class AlertNotificationService {
       _notificationsEnabled = prefs.getBool(_prefEnabledKey) ?? true;
       _soundEnabled = prefs.getBool(_prefSoundKey) ?? true;
       _keepAliveEnabled = prefs.getBool(_prefKeepAliveKey) ?? true;
+      _showCallbacksInSummary =
+          prefs.getBool(_prefShowCallbacksInSummaryKey) ?? false;
+      _showCameraAgeInSummary =
+          prefs.getBool(_prefShowCamAgeInSummaryKey) ?? true;
       final savedList = prefs.getStringList(_prefNotifiedMapKey) ?? const [];
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       for (final entry in savedList) {
@@ -63,6 +105,17 @@ class AlertNotificationService {
         final ts = int.tryParse(entry.substring(idx + 1));
         if (ts != null && (nowMs - ts) < cooldownMs) {
           _notifiedAlerts[key] = ts;
+        }
+      }
+      final savedActive =
+          prefs.getStringList(_prefActiveNotifIdsKey) ?? const [];
+      for (final entry in savedActive) {
+        final idx = entry.lastIndexOf('|');
+        if (idx <= 0) continue;
+        final key = entry.substring(0, idx);
+        final id = int.tryParse(entry.substring(idx + 1));
+        if (id != null) {
+          _activeNotificationIdsByKey[key] = id;
         }
       }
     } catch (_) {}
@@ -129,10 +182,11 @@ class AlertNotificationService {
   }
 
   /// Updates the persistent Android Foreground Service notification with a live
-  /// summary of active calls, alerts, callbacks, and fleet cameras.
+  /// summary of active calls, alerts, optional callbacks count, and optional camera age.
   Future<void> updatePersistentSummary({
     required String title,
     required String body,
+    String? collapsedBody,
     String subText = '',
   }) async {
     if (!_keepAliveEnabled ||
@@ -143,9 +197,26 @@ class AlertNotificationService {
     try {
       await _androidChannel.invokeMethod<bool>('startOrUpdateKeepAlive', {
         'title': title,
+        'collapsedBody': collapsedBody ?? body,
         'body': body,
         'subText': subText,
       });
+    } catch (_) {}
+  }
+
+  Future<void> setShowCallbacksInSummary(bool enabled) async {
+    _showCallbacksInSummary = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefShowCallbacksInSummaryKey, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> setShowCameraAgeInSummary(bool enabled) async {
+    _showCameraAgeInSummary = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefShowCamAgeInSummaryKey, enabled);
     } catch (_) {}
   }
 
@@ -164,6 +235,8 @@ class AlertNotificationService {
     } catch (_) {}
     if (enabled) {
       await requestPermissionIfNeeded();
+    } else {
+      await _dismissAllActiveAlertNotifications();
     }
   }
 
@@ -175,14 +248,40 @@ class AlertNotificationService {
     } catch (_) {}
   }
 
-  /// Evaluates the latest [alerts] list, firing OS notifications only for newly
-  /// triggered alerts (or alerts whose 15-minute cooldown has elapsed).
+  /// Evaluates the latest [alerts] list:
+  /// 1. Auto-dismisses any previously posted non-persistent notification whose
+  ///    alert is no longer active.
+  /// 2. Fires OS notifications only once per `(alertType, callId, driverId)`
+  ///    (never repeating every few minutes for the same alert).
   Future<int> processAlerts(List<DispatchAlert> alerts) async {
     if (!_initialized) {
       await initialize();
     }
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    _notifiedAlerts.removeWhere((_, ts) => (nowMs - ts) >= cooldownMs);
+    final currentKeys = alerts.map(_alertKey).toSet();
+
+    // 1. Auto-dismiss notifications for alerts that have cleared/resolved
+    final resolvedKeys = _activeNotificationIdsByKey.keys
+        .where((k) => !currentKeys.contains(k))
+        .toList(growable: false);
+    if (resolvedKeys.isNotEmpty) {
+      for (final key in resolvedKeys) {
+        final notifId = _activeNotificationIdsByKey.remove(key);
+        if (notifId != null) {
+          await _cancelPlatformNotification(notifId);
+        }
+      }
+      unawaited(_persistActiveNotificationIds());
+    }
+    if (_overflowNotificationActive && currentKeys.length <= 2) {
+      _overflowNotificationActive = false;
+      await _cancelPlatformNotification(_overflowSummaryNotifId);
+    }
+
+    // Prune shift-expired deduplication keys ONLY if the alert is not currently active
+    _notifiedAlerts.removeWhere(
+      (key, ts) => !currentKeys.contains(key) && (nowMs - ts) >= cooldownMs,
+    );
 
     if (!_notificationsEnabled || alerts.isEmpty) {
       return 0;
@@ -190,11 +289,14 @@ class AlertNotificationService {
 
     final newlyTriggered = <DispatchAlert>[];
     for (final alert in alerts) {
-      final key = '${alert.type.code}:${alert.callId}:${alert.driverId}';
+      final key = _alertKey(alert);
       final lastTs = _notifiedAlerts[key];
       if (lastTs == null || (nowMs - lastTs) >= cooldownMs) {
         _notifiedAlerts[key] = nowMs;
         newlyTriggered.add(alert);
+      } else {
+        // Refresh timestamp while still active so an ongoing alert never expires mid-call
+        _notifiedAlerts[key] = nowMs;
       }
     }
 
@@ -206,9 +308,12 @@ class AlertNotificationService {
     if (newlyTriggered.length <= 3) {
       for (int i = 0; i < newlyTriggered.length; i++) {
         final a = newlyTriggered[i];
+        final key = _alertKey(a);
+        final notifId = _notificationIdForKey(key);
+        _activeNotificationIdsByKey[key] = notifId;
         final cleanDriver = a.driverName.split('*').first.trim();
         await _dispatchPlatformNotification(
-          id: a.hashCode.abs() % 100000 + i,
+          id: notifId,
           title: 'AAA Alert: ${a.type.label} — $cleanDriver',
           body: 'Call ${a.callId} (${a.workType}): ${a.detail}',
           playSound: _soundEnabled && i == 0,
@@ -217,9 +322,12 @@ class AlertNotificationService {
     } else {
       for (int i = 0; i < 2; i++) {
         final a = newlyTriggered[i];
+        final key = _alertKey(a);
+        final notifId = _notificationIdForKey(key);
+        _activeNotificationIdsByKey[key] = notifId;
         final cleanDriver = a.driverName.split('*').first.trim();
         await _dispatchPlatformNotification(
-          id: a.hashCode.abs() % 100000 + i,
+          id: notifId,
           title: 'AAA Alert: ${a.type.label} — $cleanDriver',
           body: 'Call ${a.callId} (${a.workType}): ${a.detail}',
           playSound: _soundEnabled && i == 0,
@@ -231,15 +339,41 @@ class AlertNotificationService {
           .take(4)
           .map((a) => a.driverName.split('*').first.trim())
           .join(', ');
+      _overflowNotificationActive = true;
       await _dispatchPlatformNotification(
-        id: 99000 + moreCount,
+        id: _overflowSummaryNotifId,
         title: '+$moreCount More AAA Dispatch Alerts',
         body: 'Drivers: $names',
         playSound: false,
       );
     }
+    unawaited(_persistActiveNotificationIds());
 
     return newlyTriggered.length;
+  }
+
+  Future<void> _dismissAllActiveAlertNotifications() async {
+    final ids = _activeNotificationIdsByKey.values.toList(growable: false);
+    _activeNotificationIdsByKey.clear();
+    for (final id in ids) {
+      await _cancelPlatformNotification(id);
+    }
+    if (_overflowNotificationActive) {
+      _overflowNotificationActive = false;
+      await _cancelPlatformNotification(_overflowSummaryNotifId);
+    }
+    unawaited(_persistActiveNotificationIds());
+  }
+
+  Future<void> _cancelPlatformNotification(int id) async {
+    if (kIsWeb) return;
+    try {
+      if (Platform.isAndroid) {
+        await _androidChannel.invokeMethod<bool>('cancelNotification', {
+          'id': id,
+        });
+      }
+    } catch (_) {}
   }
 
   /// Sends a test notification on the current platform so the user can verify
@@ -262,6 +396,16 @@ class AlertNotificationService {
           .map((e) => '${e.key}|${e.value}')
           .toList(growable: false);
       await prefs.setStringList(_prefNotifiedMapKey, list);
+    } catch (_) {}
+  }
+
+  Future<void> _persistActiveNotificationIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = _activeNotificationIdsByKey.entries
+          .map((e) => '${e.key}|${e.value}')
+          .toList(growable: false);
+      await prefs.setStringList(_prefActiveNotifIdsKey, list);
     } catch (_) {}
   }
 

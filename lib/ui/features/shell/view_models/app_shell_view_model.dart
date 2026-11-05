@@ -37,6 +37,11 @@ class AppShellViewModel extends ChangeNotifier {
   /// so ticking the clock never rebuilds the entire application tree or camera grid.
   final ValueNotifier<int> clockTickNotifier = ValueNotifier<int>(0);
 
+  /// Tracks the number of cameras currently matching the active filters on the
+  /// Safety Console tab so the tab badge displays the filtered count.
+  final ValueNotifier<int> filteredCameraCountNotifier = ValueNotifier<int>(0);
+  bool _isDisposed = false;
+
   int _selectedTabIndex = 0;
   int get selectedTabIndex => _selectedTabIndex;
 
@@ -56,6 +61,24 @@ class AppShellViewModel extends ChangeNotifier {
   /// Epoch milliseconds when the next automatic camera refresh will run (`null` when Off).
   int? _nextAutoRefreshEpochMs;
   int? get nextAutoRefreshEpochMs => _nextAutoRefreshEpochMs;
+
+  /// Epoch milliseconds when a camera snapshot was last refreshed.
+  int? _lastCameraRefreshEpochMs;
+  int? get lastCameraRefreshEpochMs => _lastCameraRefreshEpochMs;
+
+  /// Human-readable relative time since the last camera update (e.g., `Just now`, `4m ago`, `Never`).
+  String get cameraLastUpdateAgeText {
+    final ts = _lastCameraRefreshEpochMs;
+    if (ts == null || ts <= 0) return 'Never';
+    final diffSec =
+        ((DateTime.now().millisecondsSinceEpoch - ts) / 1000).floor();
+    if (diffSec < 60) return 'Just now';
+    final mins = diffSec ~/ 60;
+    if (mins < 60) return '${mins}m ago';
+    final hrs = mins ~/ 60;
+    final remMins = mins % 60;
+    return remMins > 0 ? '${hrs}h ${remMins}m ago' : '${hrs}h ago';
+  }
 
   /// Formatted countdown string until the next automatic camera refresh (e.g. `14:32`),
   /// or `null` when auto-refresh is turned off.
@@ -120,6 +143,10 @@ class AppShellViewModel extends ChangeNotifier {
       _notificationService.notificationsEnabled;
   bool get alertsSoundEnabled => _notificationService.soundEnabled;
   bool get androidKeepAliveEnabled => _notificationService.keepAliveEnabled;
+  bool get showCallbacksInSummary =>
+      _notificationService.showCallbacksInSummary;
+  bool get showCameraAgeInSummary =>
+      _notificationService.showCameraAgeInSummary;
   bool get batteryOptimizationIgnored =>
       _notificationService.batteryOptimizationIgnored;
 
@@ -150,6 +177,24 @@ class AppShellViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setShowCallbacksInSummary(bool enabled) async {
+    await _notificationService.setShowCallbacksInSummary(enabled);
+    _updatePersistentLiveSummary();
+    _statusBannerText = enabled
+        ? 'Showing unchecked callbacks count in persistent notification.'
+        : 'Hidden callbacks count from persistent notification.';
+    notifyListeners();
+  }
+
+  Future<void> setShowCameraAgeInSummary(bool enabled) async {
+    await _notificationService.setShowCameraAgeInSummary(enabled);
+    _updatePersistentLiveSummary();
+    _statusBannerText = enabled
+        ? 'Showing camera update age in persistent notification.'
+        : 'Hidden camera update age from persistent notification.';
+    notifyListeners();
+  }
+
   Future<void> requestUnrestrictedAndroidBattery() async {
     await _notificationService.requestIgnoreBatteryOptimizations();
     _statusBannerText = _notificationService.batteryOptimizationIgnored
@@ -172,37 +217,65 @@ class AppShellViewModel extends ChangeNotifier {
     final alertCount = _dispatchAlerts.length;
     final uncheckedCallbacks =
         _fslRepository.clearedCalls.where((c) => !c.calledBack).length;
-    final onlineCams =
-        _motiveVehicles.where((v) => !v.isPoweredOff).length;
     final clockLabel = FslTimeUtils.formatAccountClock();
 
-    final title = alertCount > 0
-        ? 'AAA Tracker • $activeCount Active • ⚠ $alertCount Alert${alertCount == 1 ? "" : "s"}'
-        : 'AAA Tracker • $activeCount Active • 0 Alerts';
-
-    final summaryLine =
-        'Callbacks: $uncheckedCallbacks unchecked • Cams: $onlineCams online • $clockLabel';
-
-    final bodyLines = <String>[summaryLine];
-    if (alertCount > 0) {
-      for (final a in _dispatchAlerts.take(3)) {
-        final cleanDriver = a.driverName.split('*').first.trim();
-        bodyLines.add('• [${a.type.code}] $cleanDriver (${a.callId}): ${a.detail}');
-      }
-      if (alertCount > 3) {
-        bodyLines.add('• +${alertCount - 3} more active alert(s)');
-      }
+    final metaParts = <String>['$activeCount Active'];
+    if (_notificationService.showCallbacksInSummary) {
+      metaParts.add('$uncheckedCallbacks Callbacks');
     }
+    if (_notificationService.showCameraAgeInSummary) {
+      metaParts.add('Cam: $cameraLastUpdateAgeText');
+    }
+    final metaSummary = metaParts.join(' • ');
+    final syncFooter = _lastFslUpdatedLabel != null
+        ? 'Synced $_lastFslUpdatedLabel'
+        : clockLabel;
 
-    unawaited(
-      _notificationService.updatePersistentSummary(
-        title: title,
-        body: bodyLines.join('\n'),
-        subText: _lastFslUpdatedLabel != null
-            ? 'Synced $_lastFslUpdatedLabel'
-            : clockLabel,
-      ),
-    );
+    if (alertCount > 0) {
+      final title =
+          '⚠ $alertCount Alert${alertCount == 1 ? "" : "s"} • $metaSummary';
+
+      // Collapsed view shows the active alerts right on the first line so the user
+      // never has to expand the notification just to see what the alert is.
+      final collapsedAlerts = _dispatchAlerts
+          .map((a) {
+            final cleanDriver = a.driverName.split('*').first.trim();
+            return '[${a.type.code}] $cleanDriver (${a.callId})';
+          })
+          .join(' • ');
+
+      final expandedLines = <String>[];
+      for (final a in _dispatchAlerts.take(6)) {
+        final cleanDriver = a.driverName.split('*').first.trim();
+        expandedLines.add(
+          '• [${a.type.code}] $cleanDriver (Call ${a.callId}): ${a.detail}',
+        );
+      }
+      if (alertCount > 6) {
+        expandedLines.add('• +${alertCount - 6} more active alert(s)');
+      }
+      expandedLines.add('$metaSummary • $syncFooter');
+
+      unawaited(
+        _notificationService.updatePersistentSummary(
+          title: title,
+          collapsedBody: collapsedAlerts,
+          body: expandedLines.join('\n'),
+          subText: syncFooter,
+        ),
+      );
+    } else {
+      final title = 'AAA Tracker • $metaSummary';
+      final statusLine = 'No active alerts • $syncFooter';
+      unawaited(
+        _notificationService.updatePersistentSummary(
+          title: title,
+          collapsedBody: statusLine,
+          body: statusLine,
+          subText: clockLabel,
+        ),
+      );
+    }
   }
 
   Future<void> initialize() async {
@@ -252,6 +325,19 @@ class AppShellViewModel extends ChangeNotifier {
     _clockTickTimer?.cancel();
     _clockTickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       clockTickNotifier.value++;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (_cameraAutoRefreshMinutes > 0 &&
+          _nextAutoRefreshEpochMs != null &&
+          nowMs >= _nextAutoRefreshEpochMs!) {
+        final intervalMs = _cameraAutoRefreshMinutes * 60 * 1000;
+        _nextAutoRefreshEpochMs = nowMs + intervalMs;
+        unawaited(_triggerScheduledCameraAutoRefresh());
+      }
+      // Keep persistent notification relative timestamps (e.g. "Cam: 3m ago") updated every 30s
+      if (clockTickNotifier.value % 30 == 0 &&
+          _notificationService.keepAliveEnabled) {
+        _updatePersistentLiveSummary();
+      }
     });
   }
 
@@ -273,8 +359,19 @@ class AppShellViewModel extends ChangeNotifier {
 
   /// Updates the list of filtered vehicles visible in the Safety Console tab so
   /// periodic auto-refresh refreshes the user's active filter view.
-  void updateAutoRefreshTargets(List<MotiveVehicle> targets) {
+  void updateAutoRefreshTargets(
+    List<MotiveVehicle> targets, {
+    int? filteredCount,
+  }) {
     _autoRefreshTargetVehicles = targets;
+    final nextCount = filteredCount ?? targets.length;
+    if (filteredCameraCountNotifier.value != nextCount) {
+      Future.microtask(() {
+        if (!_isDisposed && filteredCameraCountNotifier.value != nextCount) {
+          filteredCameraCountNotifier.value = nextCount;
+        }
+      });
+    }
   }
 
   void _restartCameraAutoRefreshTimer() {
@@ -288,32 +385,61 @@ class AppShellViewModel extends ChangeNotifier {
     final intervalMs = _cameraAutoRefreshMinutes * 60 * 1000;
     _nextAutoRefreshEpochMs =
         DateTime.now().millisecondsSinceEpoch + intervalMs;
+  }
 
-    _cameraAutoRefreshTimer = Timer.periodic(
-      Duration(minutes: _cameraAutoRefreshMinutes),
-      (_) {
-        _nextAutoRefreshEpochMs =
-            DateTime.now().millisecondsSinceEpoch + intervalMs;
-        if (!_authService.hasMotiveSession || _isBatchRefreshingCameras) {
-          notifyListeners();
-          return;
-        }
-        final candidates = _autoRefreshTargetVehicles ?? _motiveVehicles;
-        final activeTargets = candidates
-            .where((v) => !v.isPoweredOff)
+  Future<void> _triggerScheduledCameraAutoRefresh() async {
+    if (!_authService.hasMotiveSession || _isBatchRefreshingCameras) {
+      notifyListeners();
+      return;
+    }
+
+    // Ensure fleet motion statuses are fresh before selecting auto-refresh targets
+    if (!_isMotiveLoading) {
+      try {
+        _motiveVehicles = await _motiveRepository.syncAllVehicles();
+        _relinkDriversAndTrucks();
+      } catch (_) {}
+    }
+
+    final byId = <String, MotiveVehicle>{
+      for (final v in _motiveVehicles) v.id: v,
+    };
+
+    List<MotiveVehicle> candidates = const [];
+    final explicitTargets = _autoRefreshTargetVehicles;
+    if (explicitTargets != null && explicitTargets.isNotEmpty) {
+      candidates = explicitTargets
+          .map((t) => byId[t.id] ?? t)
+          .where((v) => v.hasCamera && !v.isPoweredOff)
+          .toList(growable: false);
+    }
+
+    // Fallback when Safety Console tab hasn't been opened yet or explicit list was empty
+    if (candidates.isEmpty && _motiveVehicles.isNotEmpty) {
+      candidates = _motiveVehicles
+          .where(
+            (v) =>
+                v.hasCamera &&
+                !v.isPoweredOff &&
+                (v.motionCategory == VehicleMotionCategory.transit ||
+                    v.motionCategory == VehicleMotionCategory.idle),
+          )
+          .toList(growable: false);
+      if (candidates.isEmpty) {
+        candidates = _motiveVehicles
+            .where((v) => v.hasCamera && !v.isPoweredOff)
             .toList(growable: false);
-        if (activeTargets.isNotEmpty) {
-          unawaited(
-            refreshBatchCameras(
-              targets: activeTargets,
-              includePoweredOff: false,
-            ),
-          );
-        } else {
-          notifyListeners();
-        }
-      },
-    );
+      }
+    }
+
+    if (candidates.isNotEmpty) {
+      await refreshBatchCameras(
+        targets: candidates,
+        includePoweredOff: false,
+      );
+    } else {
+      notifyListeners();
+    }
   }
 
   /// Syncs active Salesforce FSL and Motive sessions from an open Chrome browser
@@ -445,11 +571,15 @@ class AppShellViewModel extends ChangeNotifier {
   Future<void> syncMotiveFleet() async {
     if (!_authService.hasMotiveSession || _isMotiveLoading) return;
     _startMotivePolling();
+    if (_cameraAutoRefreshMinutes > 0 && _nextAutoRefreshEpochMs == null) {
+      _restartCameraAutoRefreshTimer();
+    }
     _isMotiveLoading = true;
     notifyListeners();
 
     try {
       _motiveVehicles = await _motiveRepository.syncAllVehicles();
+      _syncLastCameraRefreshTimestamp();
       _relinkDriversAndTrucks();
       _updatePersistentLiveSummary();
       _statusBannerText =
@@ -462,6 +592,17 @@ class AppShellViewModel extends ChangeNotifier {
     }
   }
 
+  void _syncLastCameraRefreshTimestamp() {
+    int? maxTs = _lastCameraRefreshEpochMs;
+    for (final v in _motiveVehicles) {
+      final ts = v.lastRefreshedEpochMs;
+      if (ts != null && (maxTs == null || ts > maxTs)) {
+        maxTs = ts;
+      }
+    }
+    _lastCameraRefreshEpochMs = maxTs;
+  }
+
   Future<MotiveVehicle?> refreshSingleCamera(String vehicleId) async {
     _statusBannerText = 'Refreshing camera for vehicle $vehicleId...';
     notifyListeners();
@@ -471,7 +612,11 @@ class AppShellViewModel extends ChangeNotifier {
       );
       if (updated != null) {
         _motiveVehicles = _motiveRepository.vehicles;
+        if (updated.lastRefreshedEpochMs != null) {
+          _lastCameraRefreshEpochMs = updated.lastRefreshedEpochMs;
+        }
         _relinkDriversAndTrucks();
+        _updatePersistentLiveSummary();
         _statusBannerText =
             'Updated camera for ${updated.name} (${updated.cameraStatusText}).';
         notifyListeners();
@@ -500,12 +645,17 @@ class AppShellViewModel extends ChangeNotifier {
         includePoweredOff: includePoweredOff,
         onVehicleUpdated: (updated, completed, total) {
           _motiveVehicles = _motiveRepository.vehicles;
+          if (updated.lastRefreshedEpochMs != null) {
+            _lastCameraRefreshEpochMs = updated.lastRefreshedEpochMs;
+          }
           _relinkDriversAndTrucks();
           _statusBannerText =
               'Refreshed $completed / $total cameras (${updated.name}: ${updated.cameraStatusText})';
           notifyListeners();
         },
       );
+      _syncLastCameraRefreshTimestamp();
+      _updatePersistentLiveSummary();
       _statusBannerText = 'Batch camera refresh complete.';
     } finally {
       _isBatchRefreshingCameras = false;
@@ -591,11 +741,13 @@ class AppShellViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _fslPollTimer?.cancel();
     _motivePollTimer?.cancel();
     _cameraAutoRefreshTimer?.cancel();
     _clockTickTimer?.cancel();
     clockTickNotifier.dispose();
+    filteredCameraCountNotifier.dispose();
     super.dispose();
   }
 }

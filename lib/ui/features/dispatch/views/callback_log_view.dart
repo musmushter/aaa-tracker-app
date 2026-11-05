@@ -84,156 +84,159 @@ class _CallbackLogViewState extends State<CallbackLogView>
       return true;
     }).toList();
 
+    final isWide = MediaQuery.sizeOf(context).width >= 800;
+
     return Container(
       color: const Color(0xFF14161A),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top Filter Bar
+          // Top Filter Bar (Compact on Phone, Full on Desktop)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: EdgeInsets.symmetric(
+              horizontal: isWide ? 16 : 10,
+              vertical: isWide ? 10 : 8,
+            ),
             decoration: const BoxDecoration(
               color: Color(0xFF1E2127),
               border: Border(
                 bottom: BorderSide(color: Color(0xFF33373F)),
               ),
             ),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                const Text(
-                  'Callback — cleared calls (last 12 h, newest first)',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFE8E8E8),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _buildFilterPill(
-                  label: 'All (${allCalls.length})',
-                  selected: _filterMode == _CallbackFilterMode.all,
-                  onTap: () =>
-                      setState(() => _filterMode = _CallbackFilterMode.all),
-                ),
-                _buildFilterPill(
-                  label: 'Canceled ($cancelledCount)',
-                  selected: _filterMode == _CallbackFilterMode.cancelledOnly,
-                  activeColor: const Color(0xFFE5484D),
-                  onTap: () => setState(
-                    () => _filterMode = _CallbackFilterMode.cancelledOnly,
-                  ),
-                ),
-                _buildFilterPill(
-                  label: 'Red Alert ($redAlertCount)',
-                  selected: _filterMode == _CallbackFilterMode.redAlertOnly,
-                  activeColor: const Color(0xFFF5A623),
-                  onTap: () => setState(
-                    () => _filterMode = _CallbackFilterMode.redAlertOnly,
-                  ),
-                ),
-                _buildFilterPill(
-                  label: 'Unchecked ($needsCallbackCount)',
-                  selected: _filterMode == _CallbackFilterMode.needsCallback,
-                  activeColor: const Color(0xFF46A758),
-                  onTap: () => setState(
-                    () => _filterMode = _CallbackFilterMode.needsCallback,
-                  ),
-                ),
-                if (territories.isNotEmpty)
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 260),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF14161A),
-                        borderRadius: BorderRadius.circular(5),
-                        border: Border.all(color: const Color(0xFF33373F)),
+            child: isWide
+                ? Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text(
+                        'Callback — cleared calls (last 12 h, newest first)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFE8E8E8),
+                        ),
                       ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String?>(
-                          value: territories.contains(_selectedTerritory)
-                              ? _selectedTerritory
-                              : null,
-                          isDense: true,
-                          isExpanded: true,
-                          hint: const Text(
-                            'All Territories',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF8B909C),
+                      const SizedBox(width: 8),
+                      _buildFilterPill(
+                        label: 'All (${allCalls.length})',
+                        selected: _filterMode == _CallbackFilterMode.all,
+                        onTap: () => setState(
+                          () => _filterMode = _CallbackFilterMode.all,
+                        ),
+                      ),
+                      _buildFilterPill(
+                        label: 'Canceled ($cancelledCount)',
+                        selected:
+                            _filterMode == _CallbackFilterMode.cancelledOnly,
+                        activeColor: const Color(0xFFE5484D),
+                        onTap: () => setState(
+                          () => _filterMode = _CallbackFilterMode.cancelledOnly,
+                        ),
+                      ),
+                      _buildFilterPill(
+                        label: 'Red Alert ($redAlertCount)',
+                        selected:
+                            _filterMode == _CallbackFilterMode.redAlertOnly,
+                        activeColor: const Color(0xFFF5A623),
+                        onTap: () => setState(
+                          () => _filterMode = _CallbackFilterMode.redAlertOnly,
+                        ),
+                      ),
+                      _buildFilterPill(
+                        label: 'Unchecked ($needsCallbackCount)',
+                        selected:
+                            _filterMode == _CallbackFilterMode.needsCallback,
+                        activeColor: const Color(0xFF46A758),
+                        onTap: () => setState(
+                          () => _filterMode = _CallbackFilterMode.needsCallback,
+                        ),
+                      ),
+                      if (territories.isNotEmpty)
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 260),
+                          child: _buildTerritoryDropdown(territories),
+                        ),
+                      SizedBox(
+                        width: 230,
+                        child: _buildSearchField(),
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: _buildSearchField()),
+                          if (territories.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 145),
+                              child: _buildTerritoryDropdown(territories),
                             ),
-                          ),
-                          dropdownColor: const Color(0xFF1E2127),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFFE8E8E8),
-                          ),
-                          items: [
-                            const DropdownMenuItem<String?>(
-                              value: null,
-                              child: Text(
-                                'All Territories',
-                                overflow: TextOverflow.ellipsis,
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _buildFilterPill(
+                              label: 'All (${allCalls.length})',
+                              selected: _filterMode == _CallbackFilterMode.all,
+                              onTap: () => setState(
+                                () => _filterMode = _CallbackFilterMode.all,
                               ),
                             ),
-                            ...territories.map(
-                              (t) => DropdownMenuItem<String?>(
-                                value: t,
-                                child: Text(
-                                  t,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                            const SizedBox(width: 6),
+                            _buildFilterPill(
+                              label: 'Unchecked ($needsCallbackCount)',
+                              selected:
+                                  _filterMode ==
+                                  _CallbackFilterMode.needsCallback,
+                              activeColor: const Color(0xFF46A758),
+                              onTap: () => setState(
+                                () => _filterMode =
+                                    _CallbackFilterMode.needsCallback,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            _buildFilterPill(
+                              label: 'Canceled ($cancelledCount)',
+                              selected:
+                                  _filterMode ==
+                                  _CallbackFilterMode.cancelledOnly,
+                              activeColor: const Color(0xFFE5484D),
+                              onTap: () => setState(
+                                () => _filterMode =
+                                    _CallbackFilterMode.cancelledOnly,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            _buildFilterPill(
+                              label: 'Red Alert ($redAlertCount)',
+                              selected:
+                                  _filterMode ==
+                                  _CallbackFilterMode.redAlertOnly,
+                              activeColor: const Color(0xFFF5A623),
+                              onTap: () => setState(
+                                () => _filterMode =
+                                    _CallbackFilterMode.redAlertOnly,
                               ),
                             ),
                           ],
-                          onChanged: (val) =>
-                              setState(() => _selectedTerritory = val),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                SizedBox(
-                  width: 230,
-                  child: TextField(
-                    onChanged: (val) => setState(() => _searchQuery = val),
-                    style: const TextStyle(fontSize: 12),
-                    decoration: InputDecoration(
-                      hintText: 'Filter call, member, driver, vehicle...',
-                      hintStyle: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF8B909C),
-                      ),
-                      prefixIcon: const Icon(Icons.search, size: 15),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      filled: true,
-                      fillColor: const Color(0xFF14161A),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(5),
-                        borderSide: const BorderSide(color: Color(0xFF33373F)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(5),
-                        borderSide: const BorderSide(color: Color(0xFF33373F)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
 
-          // Scrollable High-Density Table
+          // Scrollable High-Density Table (Desktop) or Mobile Cards (Phone)
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(isWide ? 16 : 10),
               child: ClearedCallsTableSection(
                 calls: filteredCalls,
                 onToggleCalledBack:
@@ -244,6 +247,98 @@ class _CallbackLogViewState extends State<CallbackLogView>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTerritoryDropdown(List<String> territories) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF14161A),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: const Color(0xFF33373F)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: territories.contains(_selectedTerritory)
+              ? _selectedTerritory
+              : null,
+          isDense: true,
+          isExpanded: true,
+          hint: const Text(
+            'All Territories',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              color: Color(0xFF8B909C),
+            ),
+          ),
+          dropdownColor: const Color(0xFF1E2127),
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFFE8E8E8),
+          ),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text(
+                'All Territories',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ...territories.map(
+              (t) => DropdownMenuItem<String?>(
+                value: t,
+                child: Text(
+                  t,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+          onChanged: (val) => setState(() => _selectedTerritory = val),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField() {
+    return SizedBox(
+      height: 36,
+      child: TextField(
+        onChanged: (val) => setState(() => _searchQuery = val),
+        textAlignVertical: TextAlignVertical.center,
+        style: const TextStyle(fontSize: 12.5),
+        decoration: InputDecoration(
+          constraints: const BoxConstraints.tightFor(height: 36),
+          hintText: 'Filter call, member, driver, vehicle...',
+          hintStyle: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF8B909C),
+          ),
+          prefixIcon: const Icon(Icons.search, size: 15),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 34,
+            minHeight: 36,
+            maxHeight: 36,
+          ),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
+          ),
+          filled: true,
+          fillColor: const Color(0xFF14161A),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(5),
+            borderSide: const BorderSide(color: Color(0xFF33373F)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(5),
+            borderSide: const BorderSide(color: Color(0xFF33373F)),
+          ),
+        ),
       ),
     );
   }
@@ -343,6 +438,7 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
     final total = widget.calls.length;
     final visibleCalls = widget.calls.take(_displayLimit).toList();
     final remaining = total - visibleCalls.length;
+    final isWide = MediaQuery.sizeOf(context).width >= 800;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -371,94 +467,111 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           ),
           const SizedBox(height: 8),
         ],
-        Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E2127),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: const Color(0xFF33373F)),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: visibleCalls.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                  child: Center(
-                    child: Text(
-                      'No cleared calls recorded in the last 12 hours.',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: Color(0xFF8B909C),
-                      ),
-                    ),
-                  ),
-                )
-              : LayoutBuilder(
-                  builder: (context, constraints) {
-                    const baseWidth = 1320.0;
-                    final tableWidth = math.max(
-                      constraints.maxWidth.isFinite
-                          ? constraints.maxWidth
-                          : baseWidth,
-                      baseWidth,
-                    );
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: SizedBox(
-                        width: tableWidth,
-                        child: Table(
-                          defaultVerticalAlignment:
-                              TableCellVerticalAlignment.middle,
-                          columnWidths: const {
-                            0: FixedColumnWidth(34), // Checkbox
-                            1: FixedColumnWidth(78), // Cleared
-                            2: FixedColumnWidth(78), // Call
-                            3: FixedColumnWidth(110), // Territory
-                            4: FlexColumnWidth(1.2), // Member
-                            5: FixedColumnWidth(148), // Member phone
-                            6: FixedColumnWidth(92), // Benefit level
-                            7: FlexColumnWidth(1.0), // Type
-                            8: FlexColumnWidth(1.3), // Vehicle
-                            9: FlexColumnWidth(1.1), // Driver
-                            10: FixedColumnWidth(92), // Member waited
-                            11: FixedColumnWidth(76), // On scene
-                            12: FixedColumnWidth(116), // Flags
-                          },
-                          border: const TableBorder(
-                            horizontalInside: BorderSide(
-                              color: Color(0xFF33373F),
-                              width: 1,
-                            ),
-                          ),
-                          children: [
-                            // Header Row
-                            TableRow(
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF252931),
-                              ),
-                              children: [
-                                _th(''),
-                                _th('Cleared'),
-                                _th('Call'),
-                                _th('Territory'),
-                                _th('Member'),
-                                _th('Member phone'),
-                                _th('Benefit level'),
-                                _th('Type'),
-                                _th('Vehicle'),
-                                _th('Driver'),
-                                _th('Member waited', alignRight: true),
-                                _th('On scene', alignRight: true),
-                                _th('Flags'),
-                              ],
-                            ),
-                            // Data Rows
-                            for (final c in visibleCalls) _buildRow(context, c),
-                          ],
+        if (visibleCalls.isEmpty)
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2127),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF33373F)),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: const Center(
+              child: Text(
+                'No cleared calls recorded in the last 12 hours.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Color(0xFF8B909C),
+                ),
+              ),
+            ),
+          )
+        else if (isWide)
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2127),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF33373F)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const baseWidth = 1320.0;
+                final tableWidth = math.max(
+                  constraints.maxWidth.isFinite
+                      ? constraints.maxWidth
+                      : baseWidth,
+                  baseWidth,
+                );
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: tableWidth,
+                    child: Table(
+                      defaultVerticalAlignment:
+                          TableCellVerticalAlignment.middle,
+                      columnWidths: const {
+                        0: FixedColumnWidth(34), // Checkbox
+                        1: FixedColumnWidth(78), // Cleared
+                        2: FixedColumnWidth(78), // Call
+                        3: FixedColumnWidth(110), // Territory
+                        4: FlexColumnWidth(1.2), // Member
+                        5: FixedColumnWidth(148), // Member phone
+                        6: FixedColumnWidth(92), // Benefit level
+                        7: FlexColumnWidth(1.0), // Type
+                        8: FlexColumnWidth(1.3), // Vehicle
+                        9: FlexColumnWidth(1.1), // Driver
+                        10: FixedColumnWidth(92), // Member waited
+                        11: FixedColumnWidth(76), // On scene
+                        12: FixedColumnWidth(116), // Flags
+                      },
+                      border: const TableBorder(
+                        horizontalInside: BorderSide(
+                          color: Color(0xFF33373F),
+                          width: 1,
                         ),
                       ),
-                    );
-                  },
+                      children: [
+                        // Header Row
+                        TableRow(
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF252931),
+                          ),
+                          children: [
+                            _th(''),
+                            _th('Cleared'),
+                            _th('Call'),
+                            _th('Territory'),
+                            _th('Member'),
+                            _th('Member phone'),
+                            _th('Benefit level'),
+                            _th('Type'),
+                            _th('Vehicle'),
+                            _th('Driver'),
+                            _th('Member waited', alignRight: true),
+                            _th('On scene', alignRight: true),
+                            _th('Flags'),
+                          ],
+                        ),
+                        // Data Rows
+                        for (final c in visibleCalls) _buildRow(context, c),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final c in visibleCalls)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _buildMobileCallbackCard(context, c),
                 ),
-        ),
+            ],
+          ),
         if (remaining > 0) ...[
           const SizedBox(height: 8),
           Center(
@@ -482,6 +595,309 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _buildMobileCallbackCard(BuildContext context, ClearedCall c) {
+    final clearedStr = FslTimeUtils.formatCentralTime(c.clearedAtEpochMs);
+    final isCanceled = c.isCancelled;
+    final isCalled = c.calledBack;
+    final cardBg = isCanceled
+        ? const Color(0xFF3A2F14)
+        : const Color(0xFF1E2127);
+    final borderColor = isCanceled
+        ? const Color(0xFFB9A77C).withValues(alpha: 0.5)
+        : const Color(0xFF33373F);
+    final textColor = isCanceled
+        ? const Color(0xFFB9A77C)
+        : const Color(0xFFE8E8E8);
+    final waitLabel = c.waitDurationMin != null
+        ? (c.waitDurationMin! >= 60
+              ? '${c.waitDurationMin! ~/ 60}h ${c.waitDurationMin! % 60}m'
+              : '${c.waitDurationMin} min')
+        : '–';
+    final onSceneLabel = c.onSceneDurationMin != null
+        ? (c.onSceneDurationMin! >= 60
+              ? '${c.onSceneDurationMin! ~/ 60}h ${c.onSceneDurationMin! % 60}m'
+              : '${c.onSceneDurationMin} min')
+        : '–';
+
+    return Opacity(
+      opacity: isCalled ? 0.5 : 1.0,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Row 1: Checkbox + Fixed Columns (Call ID | Cleared Time | Territory | Flags)
+            Row(
+              children: [
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Checkbox(
+                    value: isCalled,
+                    visualDensity: VisualDensity.compact,
+                    onChanged: (_) => widget.onToggleCalledBack(c.uniqueKey),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  flex: 34,
+                  child: InkWell(
+                    onTap: () => _copyText(context, c.callId, 'Call ID'),
+                    child: Text(
+                      'Call ${c.callId}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w700,
+                        color: textColor,
+                        decoration: isCanceled
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  flex: 28,
+                  child: Text(
+                    clearedStr,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                      color: textColor.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  flex: 22,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF14161A),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF33373F)),
+                      ),
+                      child: Text(
+                        _shortTerritoryLabel(c.territory),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isCanceled
+                              ? const Color(0xFFB9A77C)
+                              : const Color(0xFF93C5FD),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (isCanceled || c.isRedAlert) ...[
+                  const SizedBox(width: 4),
+                  if (isCanceled)
+                    _buildFlagPill(
+                      'CANCELED',
+                      fg: Colors.white,
+                      bg: const Color(0xFFE5484D),
+                    ),
+                  if (c.isRedAlert)
+                    _buildFlagPill(
+                      'RED ALERT',
+                      fg: Colors.white,
+                      bg: const Color(0xFFE5484D),
+                      outlined: true,
+                    ),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 6),
+
+            // Row 2: Fixed Columns for Member Name + Benefit Level (left) and Phone (right)
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          (c.memberName != null && c.memberName!.isNotEmpty)
+                              ? 'Member: ${c.memberName!}'
+                              : 'Member: –',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: textColor,
+                          ),
+                        ),
+                      ),
+                      if (c.benefitLevel != null &&
+                          c.benefitLevel!.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF14161A),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFF33373F)),
+                          ),
+                          child: Text(
+                            c.benefitLevel!,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFCBD5E1),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (c.memberPhone != null &&
+                    c.memberPhone!.trim().isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  PhoneChipsBar(phones: [c.memberPhone!], compact: true),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 6),
+
+            // Row 3: Fixed 4-Column Grid (TYPE | DRIVER | WAITED | ON SCENE)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF16181D),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF2A2E37)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 35,
+                    child: _buildMobileCallbackGridCell(
+                      label: 'TYPE',
+                      value: (c.workType != null && c.workType!.isNotEmpty)
+                          ? c.workType!
+                          : '–',
+                      color: textColor,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 29,
+                    child: _buildMobileCallbackGridCell(
+                      label: 'DRIVER',
+                      value: c.driverName.isNotEmpty ? c.driverName : '–',
+                      color: textColor.withValues(alpha: 0.9),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 18,
+                    child: _buildMobileCallbackGridCell(
+                      label: 'WAITED',
+                      value: waitLabel,
+                      color: const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 18,
+                    child: _buildMobileCallbackGridCell(
+                      label: 'ON SCENE',
+                      value: onSceneLabel,
+                      color: const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            if (c.memberVehicle != null && c.memberVehicle!.isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                'Vehicle: ${c.memberVehicle!}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textColor.withValues(alpha: 0.9),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileCallbackGridCell({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 9.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.3,
+            color: Color(0xFF7B8290),
+          ),
+        ),
+        const SizedBox(height: 2),
+        SizedBox(
+          height: 18,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

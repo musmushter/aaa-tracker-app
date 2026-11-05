@@ -617,8 +617,8 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
     final sortedGroups = groupCounts.keys.toList()..sort();
     final activeGroups = _selectedGroups.intersection(sortedGroups.toSet());
 
-    // 2. Filter vehicles
-    final filtered = allVehicles.where((v) {
+    // 2. Filter vehicles (and compute auto-refresh target pool before search/snapshot-only narrowing)
+    final autoRefreshPool = allVehicles.where((v) {
       if (focusedId != null && v.id == focusedId) return true;
       if (_hidePoweredOff && v.isPoweredOff) return false;
       if (activeOrgs.isNotEmpty &&
@@ -632,12 +632,20 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
         return false;
       }
       if (_onlyOnCall && v.linkedFslDriver == null) return false;
-      if (_onlyWithSnapshots && !v.hasImages) return false;
       if (_selectedMotions.isNotEmpty &&
           !_selectedMotions.contains(v.motionCategory)) {
         return false;
       }
+      return true;
+    }).toList();
+
+    final filtered = autoRefreshPool.where((v) {
+      if (focusedId != null && v.id == focusedId) return true;
+      if (_onlyWithSnapshots && !v.hasImages) return false;
       if (_searchQuery.isNotEmpty) {
+        final grp = v.associationGroup.trim().isNotEmpty
+            ? v.associationGroup.trim()
+            : 'Unassigned';
         final q = _searchQuery.toLowerCase();
         final matchName = v.name.toLowerCase().contains(q);
         final matchDrv = (v.effectiveDriverName ?? '')
@@ -690,13 +698,30 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
       }
     });
 
-    vm.updateAutoRefreshTargets(filtered);
+    vm.updateAutoRefreshTargets(
+      autoRefreshPool,
+      filteredCount: filtered.length,
+    );
+
+    final isWide = MediaQuery.sizeOf(context).width >= 800;
 
     final activeStatusFilterCount =
         _selectedMotions.length +
         (_onlyOnCall ? 1 : 0) +
         (_onlyWithSnapshots ? 1 : 0) +
         (!_hidePoweredOff ? 1 : 0);
+
+    final totalMobileFilterCount =
+        activeOrgs.length +
+        activeGroups.length +
+        (_onlyOnCall ? 1 : 0) +
+        (_onlyWithSnapshots ? 1 : 0) +
+        (!_hidePoweredOff ? 1 : 0) +
+        ((_selectedMotions.length != 2 ||
+                !_selectedMotions.contains(VehicleMotionCategory.transit) ||
+                !_selectedMotions.contains(VehicleMotionCategory.idle))
+            ? 1
+            : 0);
 
     final orgButtonLabel = activeOrgs.isEmpty
         ? 'Org: All (${sortedOrgs.length})'
@@ -717,347 +742,381 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Single Compact Toolbar Row (Search + Popover Filter Dialogs + Sort + Batch Actions)
+        // Toolbar: Single compact 1-line bar on Phone (<800px), Full toolbar on Desktop (>=800px)
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: EdgeInsets.symmetric(
+            horizontal: isWide ? 14 : 10,
+            vertical: isWide ? 10 : 7,
+          ),
           decoration: const BoxDecoration(
             color: Color(0xFF1E2127),
             border: Border(bottom: BorderSide(color: Color(0xFF33373F))),
           ),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 230,
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (v) =>
-                          setState(() => _searchQuery = v.trim()),
-                      style: const TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: 'Search unit, driver, group, org...',
-                        prefixIcon: const Icon(Icons.search, size: 17),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, size: 15),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() => _searchQuery = '');
-                                },
-                              )
-                            : null,
-                        isDense: true,
-                        filled: true,
-                        fillColor: const Color(0xFF14161A),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF33373F),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF33373F),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Organization Selector Dialog Button
-                  if (sortedOrgs.isNotEmpty)
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        backgroundColor: activeOrgs.isNotEmpty
-                            ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
-                            : const Color(0xFF14161A),
-                        side: BorderSide(
-                          color: activeOrgs.isNotEmpty
-                              ? const Color(0xFF3B82F6)
-                              : const Color(0xFF33373F),
-                        ),
-                      ),
-                      onPressed: () => _showOrgFilterDialog(
-                        context,
-                        sortedOrgs,
-                        orgCounts,
-                      ),
-                      icon: const Icon(Icons.business_outlined, size: 15),
-                      label: Text(
-                        orgButtonLabel,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-
-                  // Multi-Group / Association Dialog Button
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      backgroundColor: activeGroups.isNotEmpty
-                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
-                          : const Color(0xFF14161A),
-                      side: BorderSide(
-                        color: activeGroups.isNotEmpty
-                            ? const Color(0xFF3B82F6)
-                            : const Color(0xFF33373F),
-                      ),
-                    ),
-                    onPressed: sortedGroups.isEmpty
-                        ? null
-                        : () => _showMultiGroupDialog(
-                            context,
-                            sortedGroups,
-                            groupCounts,
-                          ),
-                    icon: const Icon(Icons.workspaces_outlined, size: 15),
-                    label: Text(
-                      groupButtonLabel,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-
-                  // Motion & Status Filters Dialog Button
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      backgroundColor: activeStatusFilterCount > 0
-                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
-                          : const Color(0xFF14161A),
-                      side: BorderSide(
-                        color: activeStatusFilterCount > 0
-                            ? const Color(0xFF3B82F6)
-                            : const Color(0xFF33373F),
-                      ),
-                    ),
-                    onPressed: () => _showStatusFiltersDialog(
-                      context,
-                      motionCounts,
-                      onCallCount,
-                      withSnapshotsCount,
-                    ),
-                    icon: const Icon(Icons.tune, size: 15),
-                    label: Text(
-                      filtersButtonLabel,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-
-                  // Sort Selector
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 230),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF14161A),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFF33373F)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<SafetySortOption>(
-                          value: _sortOption,
-                          isDense: true,
-                          isExpanded: true,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFFE8E8E8),
-                          ),
-                          dropdownColor: const Color(0xFF1E2127),
-                          items: SafetySortOption.values
-                              .map(
-                                (opt) => DropdownMenuItem(
-                                  value: opt,
-                                  child: Text(
-                                    opt.label,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+          child: isWide
+              ? Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  alignment: WrapAlignment.spaceBetween,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 230,
+                          child: TextField(
+                            controller: _searchController,
+                            onChanged: (v) =>
+                                setState(() => _searchQuery = v.trim()),
+                            style: const TextStyle(fontSize: 13),
+                            decoration: InputDecoration(
+                              hintText: 'Search unit, driver, group, org...',
+                              prefixIcon: const Icon(Icons.search, size: 17),
+                              suffixIcon: _searchQuery.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, size: 15),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        setState(() => _searchQuery = '');
+                                      },
+                                    )
+                                  : null,
+                              isDense: true,
+                              filled: true,
+                              fillColor: const Color(0xFF14161A),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFF33373F),
                                 ),
-                              )
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() => _sortOption = val);
-                              _saveFilterPrefs();
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  if (_hasNonDefaultFilters || focusedId != null)
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: _resetFilters,
-                      icon: const Icon(Icons.restart_alt, size: 15),
-                      label: const Text(
-                        'Reset',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                ],
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  // Auto-Refresh Cameras Interval Selector + Countdown Timer
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: vm.cameraAutoRefreshMinutes > 0
-                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
-                          : const Color(0xFF14161A),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: vm.cameraAutoRefreshMinutes > 0
-                            ? const Color(0xFF3B82F6)
-                            : const Color(0xFF33373F),
-                      ),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: const {0, 5, 10, 15, 30}.contains(
-                              vm.cameraAutoRefreshMinutes,
-                            )
-                            ? vm.cameraAutoRefreshMinutes
-                            : 0,
-                        isDense: true,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFFE8E8E8),
-                        ),
-                        dropdownColor: const Color(0xFF1E2127),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 0,
-                            child: Text('Auto-Refresh: Off'),
-                          ),
-                          DropdownMenuItem(
-                            value: 5,
-                            child: Text('Auto-Refresh: 5m'),
-                          ),
-                          DropdownMenuItem(
-                            value: 10,
-                            child: Text('Auto-Refresh: 10m'),
-                          ),
-                          DropdownMenuItem(
-                            value: 15,
-                            child: Text('Auto-Refresh: 15m'),
-                          ),
-                          DropdownMenuItem(
-                            value: 30,
-                            child: Text('Auto-Refresh: 30m'),
-                          ),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) {
-                            vm.setCameraAutoRefreshMinutes(val);
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                  ValueListenableBuilder<int>(
-                    valueListenable: vm.clockTickNotifier,
-                    builder: (context, _, _) {
-                      final countdown = vm.autoRefreshCountdownText;
-                      if (countdown == null) return const SizedBox.shrink();
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF14161A),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF3B82F6)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.timer_outlined,
-                              size: 13,
-                              color: Color(0xFF93C5FD),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Next: $countdown',
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF93C5FD),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFF33373F),
+                                ),
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
+
+                        // Organization Selector Dialog Button
+                        if (sortedOrgs.isNotEmpty)
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              backgroundColor: activeOrgs.isNotEmpty
+                                  ? const Color(
+                                      0xFF1E3A8A,
+                                    ).withValues(alpha: 0.35)
+                                  : const Color(0xFF14161A),
+                              side: BorderSide(
+                                color: activeOrgs.isNotEmpty
+                                    ? const Color(0xFF3B82F6)
+                                    : const Color(0xFF33373F),
+                              ),
+                            ),
+                            onPressed: () => _showOrgFilterDialog(
+                              context,
+                              sortedOrgs,
+                              orgCounts,
+                            ),
+                            icon: const Icon(Icons.business_outlined, size: 15),
+                            label: Text(
+                              orgButtonLabel,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+
+                        // Multi-Group / Association Dialog Button
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: activeGroups.isNotEmpty
+                                ? const Color(
+                                    0xFF1E3A8A,
+                                  ).withValues(alpha: 0.35)
+                                : const Color(0xFF14161A),
+                            side: BorderSide(
+                              color: activeGroups.isNotEmpty
+                                  ? const Color(0xFF3B82F6)
+                                  : const Color(0xFF33373F),
+                            ),
+                          ),
+                          onPressed: sortedGroups.isEmpty
+                              ? null
+                              : () => _showMultiGroupDialog(
+                                  context,
+                                  sortedGroups,
+                                  groupCounts,
+                                ),
+                          icon: const Icon(Icons.workspaces_outlined, size: 15),
+                          label: Text(
+                            groupButtonLabel,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+
+                        // Motion & Status Filters Dialog Button
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: activeStatusFilterCount > 0
+                                ? const Color(
+                                    0xFF1E3A8A,
+                                  ).withValues(alpha: 0.35)
+                                : const Color(0xFF14161A),
+                            side: BorderSide(
+                              color: activeStatusFilterCount > 0
+                                  ? const Color(0xFF3B82F6)
+                                  : const Color(0xFF33373F),
+                            ),
+                          ),
+                          onPressed: () => _showStatusFiltersDialog(
+                            context,
+                            motionCounts,
+                            onCallCount,
+                            withSnapshotsCount,
+                          ),
+                          icon: const Icon(Icons.tune, size: 15),
+                          label: Text(
+                            filtersButtonLabel,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+
+                        // Sort Selector
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 230),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF14161A),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xFF33373F),
+                              ),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<SafetySortOption>(
+                                value: _sortOption,
+                                isDense: true,
+                                isExpanded: true,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFFE8E8E8),
+                                ),
+                                dropdownColor: const Color(0xFF1E2127),
+                                items: SafetySortOption.values
+                                    .map(
+                                      (opt) => DropdownMenuItem(
+                                        value: opt,
+                                        child: Text(
+                                          opt.label,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() => _sortOption = val);
+                                    _saveFilterPrefs();
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        if (_hasNonDefaultFilters || focusedId != null)
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: _resetFilters,
+                            icon: const Icon(Icons.restart_alt, size: 15),
+                            label: const Text(
+                              'Reset',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                      ],
                     ),
-                    onPressed: vm.isMotiveLoading ? null : vm.syncMotiveFleet,
-                    icon: const Icon(Icons.sync, size: 15),
-                    label: const Text(
-                      'Sync Fleet',
-                      style: TextStyle(fontSize: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        // Auto-Refresh Cameras Interval Selector + Countdown Timer
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: vm.cameraAutoRefreshMinutes > 0
+                                ? const Color(
+                                    0xFF1E3A8A,
+                                  ).withValues(alpha: 0.35)
+                                : const Color(0xFF14161A),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: vm.cameraAutoRefreshMinutes > 0
+                                  ? const Color(0xFF3B82F6)
+                                  : const Color(0xFF33373F),
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<int>(
+                              value: const {0, 5, 10, 15, 30}.contains(
+                                    vm.cameraAutoRefreshMinutes,
+                                  )
+                                  ? vm.cameraAutoRefreshMinutes
+                                  : 0,
+                              isDense: true,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFFE8E8E8),
+                              ),
+                              dropdownColor: const Color(0xFF1E2127),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 0,
+                                  child: Text('Auto-Refresh: Off'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 5,
+                                  child: Text('Auto-Refresh: 5m'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 10,
+                                  child: Text('Auto-Refresh: 10m'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 15,
+                                  child: Text('Auto-Refresh: 15m'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 30,
+                                  child: Text('Auto-Refresh: 30m'),
+                                ),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  vm.setCameraAutoRefreshMinutes(val);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        ValueListenableBuilder<int>(
+                          valueListenable: vm.clockTickNotifier,
+                          builder: (context, _, _) {
+                            final countdown = vm.autoRefreshCountdownText;
+                            if (countdown == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF14161A),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(0xFF3B82F6),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.timer_outlined,
+                                    size: 13,
+                                    color: Color(0xFF93C5FD),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Next: $countdown',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontFamily: 'monospace',
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF93C5FD),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: vm.isMotiveLoading
+                              ? null
+                              : vm.syncMotiveFleet,
+                          icon: const Icon(Icons.sync, size: 15),
+                          label: const Text(
+                            'Sync Fleet',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        if (vm.isBatchRefreshingCameras)
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFE5484D),
+                              foregroundColor: Colors.white,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: vm.stopBatchCameraRefresh,
+                            icon: const Icon(Icons.stop, size: 15),
+                            label: const Text(
+                              'Stop Batch',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          )
+                        else
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: filtered.isEmpty
+                                ? null
+                                : () =>
+                                      vm.refreshBatchCameras(targets: filtered),
+                            icon: const Icon(
+                              Icons.cameraswitch_rounded,
+                              size: 15,
+                            ),
+                            label: Text(
+                              'Refresh Shown (${filtered.length})',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                  if (vm.isBatchRefreshingCameras)
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFE5484D),
-                        foregroundColor: Colors.white,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: vm.stopBatchCameraRefresh,
-                      icon: const Icon(Icons.stop, size: 15),
-                      label: const Text(
-                        'Stop Batch',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    )
-                  else
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: filtered.isEmpty
-                          ? null
-                          : () => vm.refreshBatchCameras(targets: filtered),
-                      icon: const Icon(
-                        Icons.cameraswitch_rounded,
-                        size: 15,
-                      ),
-                      label: Text(
-                        'Refresh Shown (${filtered.length})',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
+                  ],
+                )
+              : _buildMobileCompactToolbar(
+                  context,
+                  vm: vm,
+                  filtered: filtered,
+                  sortedOrgs: sortedOrgs,
+                  orgCounts: orgCounts,
+                  sortedGroups: sortedGroups,
+                  groupCounts: groupCounts,
+                  motionCounts: motionCounts,
+                  onCallCount: onCallCount,
+                  withSnapshotsCount: withSnapshotsCount,
+                  totalMobileFilterCount: totalMobileFilterCount,
+                ),
         ),
 
         // Vehicles Grid with True 16:9 Aspect Ratio Camera Cards
@@ -1113,9 +1172,9 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                     final double mainCamHeight = innerCamWidth * 9.0 / 16.0;
                     final double thumbStripHeight = (mainCamHeight * 0.38)
                         .clamp(78.0, 118.0);
-                    // Header (~74) + thumbStrip + gap (6) + mainCamHeight + Footer (~52) + borders (12)
+                    // Header (~98) + thumbStrip + gap (6) + mainCamHeight + Footer (~52) + borders (12)
                     final double cardHeight =
-                        74.0 +
+                        98.0 +
                         thumbStripHeight +
                         6.0 +
                         mainCamHeight +
@@ -1145,6 +1204,594 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMobileCompactToolbar(
+    BuildContext context, {
+    required AppShellViewModel vm,
+    required List<MotiveVehicle> filtered,
+    required List<String> sortedOrgs,
+    required Map<String, int> orgCounts,
+    required List<String> sortedGroups,
+    required Map<String, int> groupCounts,
+    required Map<VehicleMotionCategory, int> motionCounts,
+    required int onCallCount,
+    required int withSnapshotsCount,
+    required int totalMobileFilterCount,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 36,
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _searchQuery = v.trim()),
+              textAlignVertical: TextAlignVertical.center,
+              style: const TextStyle(fontSize: 12.5),
+              decoration: InputDecoration(
+                constraints: const BoxConstraints.tightFor(height: 36),
+                hintText: 'Search unit, driver...',
+                hintStyle: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF8B909C),
+                ),
+                prefixIcon: const Icon(Icons.search, size: 15),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 36,
+                  maxHeight: 36,
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 14),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 26,
+                          minHeight: 26,
+                        ),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                isDense: true,
+                filled: true,
+                fillColor: const Color(0xFF14161A),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: Color(0xFF33373F)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: Color(0xFF33373F)),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        // Filters, Sort & Auto-Refresh Sheet Button
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            backgroundColor: totalMobileFilterCount > 0
+                ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
+                : const Color(0xFF14161A),
+            side: BorderSide(
+              color: totalMobileFilterCount > 0
+                  ? const Color(0xFF3B82F6)
+                  : const Color(0xFF33373F),
+            ),
+          ),
+          onPressed: () => _showMobileFilterAndSortSheet(
+            context,
+            vm: vm,
+            sortedOrgs: sortedOrgs,
+            orgCounts: orgCounts,
+            sortedGroups: sortedGroups,
+            groupCounts: groupCounts,
+            motionCounts: motionCounts,
+            onCallCount: onCallCount,
+            withSnapshotsCount: withSnapshotsCount,
+          ),
+          icon: const Icon(Icons.tune_rounded, size: 14),
+          label: Text(
+            totalMobileFilterCount > 0
+                ? 'Filter ($totalMobileFilterCount)'
+                : 'Filter',
+            style: const TextStyle(fontSize: 11.5),
+          ),
+        ),
+        const SizedBox(width: 6),
+        // Auto-Refresh Countdown Pill (tappable to configure interval)
+        ValueListenableBuilder<int>(
+          valueListenable: vm.clockTickNotifier,
+          builder: (context, _, _) {
+            final countdown = vm.autoRefreshCountdownText;
+            if (countdown == null) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: InkWell(
+                onTap: () => _showMobileFilterAndSortSheet(
+                  context,
+                  vm: vm,
+                  sortedOrgs: sortedOrgs,
+                  orgCounts: orgCounts,
+                  sortedGroups: sortedGroups,
+                  groupCounts: groupCounts,
+                  motionCounts: motionCounts,
+                  onCallCount: onCallCount,
+                  withSnapshotsCount: withSnapshotsCount,
+                ),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF14161A),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF3B82F6)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.timer_outlined,
+                        size: 12,
+                        color: Color(0xFF93C5FD),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        countdown,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF93C5FD),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        // Batch Refresh / Stop Button
+        if (vm.isBatchRefreshingCameras)
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFE5484D),
+              foregroundColor: Colors.white,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            ),
+            onPressed: vm.stopBatchCameraRefresh,
+            icon: const Icon(Icons.stop, size: 14),
+            label: const Text('Stop', style: TextStyle(fontSize: 11.5)),
+          )
+        else
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            ),
+            onPressed: filtered.isEmpty
+                ? null
+                : () => vm.refreshBatchCameras(targets: filtered),
+            icon: const Icon(Icons.cameraswitch_rounded, size: 14),
+            label: Text(
+              'Refresh (${filtered.length})',
+              style: const TextStyle(fontSize: 11.5),
+            ),
+          ),
+        const SizedBox(width: 4),
+        IconButton.outlined(
+          visualDensity: VisualDensity.compact,
+          tooltip: 'Sync Fleet',
+          style: IconButton.styleFrom(
+            backgroundColor: const Color(0xFF14161A),
+            side: const BorderSide(color: Color(0xFF33373F)),
+          ),
+          onPressed: vm.isMotiveLoading ? null : vm.syncMotiveFleet,
+          icon: vm.isMotiveLoading
+              ? const SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.sync, size: 15),
+        ),
+      ],
+    );
+  }
+
+  void _showMobileFilterAndSortSheet(
+    BuildContext context, {
+    required AppShellViewModel vm,
+    required List<String> sortedOrgs,
+    required Map<String, int> orgCounts,
+    required List<String> sortedGroups,
+    required Map<String, int> groupCounts,
+    required Map<VehicleMotionCategory, int> motionCounts,
+    required int onCallCount,
+    required int withSnapshotsCount,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E2127),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(ctx).height * 0.82,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Camera Filters, Sort & Auto-Refresh',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFE8E8E8),
+                              ),
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton(
+                                onPressed: () {
+                                  _resetFilters();
+                                  setModalState(() {});
+                                },
+                                child: const Text('Reset All'),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 20),
+                                onPressed: () => Navigator.of(ctx).pop(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const Divider(color: Color(0xFF33373F), height: 12),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 1. Auto-Refresh Interval
+                              const Text(
+                                'AUTO-REFRESH CAMERAS',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF8B909C),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [0, 5, 10, 15, 30].map((mins) {
+                                  final selected =
+                                      vm.cameraAutoRefreshMinutes == mins;
+                                  final label = mins == 0
+                                      ? 'Off'
+                                      : 'Every ${mins}m';
+                                  return ChoiceChip(
+                                    label: Text(
+                                      label,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    selected: selected,
+                                    onSelected: (_) {
+                                      vm.setCameraAutoRefreshMinutes(mins);
+                                      setModalState(() {});
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                              const SizedBox(height: 14),
+
+                              // 2. Sort Order
+                              const Text(
+                                'SORT BY',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF8B909C),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF14161A),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: const Color(0xFF33373F),
+                                  ),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<SafetySortOption>(
+                                    value: _sortOption,
+                                    isExpanded: true,
+                                    dropdownColor: const Color(0xFF1E2127),
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFFE8E8E8),
+                                    ),
+                                    items: SafetySortOption.values
+                                        .map(
+                                          (opt) => DropdownMenuItem(
+                                            value: opt,
+                                            child: Text(opt.label),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() => _sortOption = val);
+                                        _saveFilterPrefs();
+                                        setModalState(() {});
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+
+                              // 3. Vehicle Motion Filter
+                              const Text(
+                                'VEHICLE MOTION',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF8B909C),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: VehicleMotionCategory.values.map((m) {
+                                  final checked = _selectedMotions.contains(m);
+                                  final count = motionCounts[m] ?? 0;
+                                  return FilterChip(
+                                    label: Text(
+                                      '${m.label} ($count)',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    selected: checked,
+                                    onSelected: (val) {
+                                      setState(() {
+                                        if (val) {
+                                          _selectedMotions.add(m);
+                                        } else {
+                                          _selectedMotions.remove(m);
+                                        }
+                                      });
+                                      _saveFilterPrefs();
+                                      setModalState(() {});
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                              const SizedBox(height: 14),
+
+                              // 4. Organization Filter
+                              if (sortedOrgs.isNotEmpty) ...[
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'ORGANIZATIONS',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF8B909C),
+                                      ),
+                                    ),
+                                    if (_selectedOrgs.isNotEmpty)
+                                      TextButton(
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                        onPressed: () {
+                                          setState(() => _selectedOrgs.clear());
+                                          _saveFilterPrefs();
+                                          setModalState(() {});
+                                        },
+                                        child: const Text(
+                                          'All Orgs',
+                                          style: TextStyle(fontSize: 11.5),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: sortedOrgs.map((org) {
+                                    final checked = _selectedOrgs.contains(org);
+                                    final count = orgCounts[org] ?? 0;
+                                    return FilterChip(
+                                      label: Text(
+                                        '$org ($count)',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      selected: checked,
+                                      onSelected: (val) {
+                                        setState(() {
+                                          if (val) {
+                                            _selectedOrgs.add(org);
+                                          } else {
+                                            _selectedOrgs.remove(org);
+                                          }
+                                        });
+                                        _saveFilterPrefs();
+                                        setModalState(() {});
+                                      },
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+
+                              // 5. Fleet Groups / Associations
+                              if (sortedGroups.isNotEmpty) ...[
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'FLEET GROUPS / ASSOCIATIONS',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF8B909C),
+                                      ),
+                                    ),
+                                    if (_selectedGroups.isNotEmpty)
+                                      TextButton(
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                        onPressed: () {
+                                          setState(
+                                            () => _selectedGroups.clear(),
+                                          );
+                                          _saveFilterPrefs();
+                                          setModalState(() {});
+                                        },
+                                        child: const Text(
+                                          'All Groups',
+                                          style: TextStyle(fontSize: 11.5),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: sortedGroups.map((grp) {
+                                    final checked = _selectedGroups.contains(
+                                      grp,
+                                    );
+                                    final count = groupCounts[grp] ?? 0;
+                                    return FilterChip(
+                                      label: Text(
+                                        '$grp ($count)',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      selected: checked,
+                                      onSelected: (val) {
+                                        setState(() {
+                                          if (val) {
+                                            _selectedGroups.add(grp);
+                                          } else {
+                                            _selectedGroups.remove(grp);
+                                          }
+                                        });
+                                        _saveFilterPrefs();
+                                        setModalState(() {});
+                                      },
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+
+                              // 6. Status & Snapshot Switches
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                value: _onlyOnCall,
+                                title: Text(
+                                  'On Call Only ($onCallCount)',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                onChanged: (val) {
+                                  setState(() => _onlyOnCall = val);
+                                  _saveFilterPrefs();
+                                  setModalState(() {});
+                                },
+                              ),
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                value: _onlyWithSnapshots,
+                                title: Text(
+                                  'Captured Snapshots Only ($withSnapshotsCount)',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                onChanged: (val) {
+                                  setState(() => _onlyWithSnapshots = val);
+                                  _saveFilterPrefs();
+                                  setModalState(() {});
+                                },
+                              ),
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                value: _hidePoweredOff,
+                                title: const Text(
+                                  'Hide Powered Off Vehicles',
+                                  style: TextStyle(fontSize: 13),
+                                ),
+                                onChanged: (val) {
+                                  setState(() => _hidePoweredOff = val);
+                                  _saveFilterPrefs();
+                                  setModalState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      FilledButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Apply & Close'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1196,6 +1843,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                         children: [
                           Text(
                             v.name,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
@@ -1221,9 +1869,10 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                         driverName != null
                             ? 'Driver: $driverName${link != null ? " • On Call (${link.signal.badgeText})" : ""}'
                             : 'No Associated Driver',
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 11.5,
                           color: driverName != null
                               ? const Color(0xFFCBD5E1)
                               : const Color(0xFF8B909C),
@@ -1280,7 +1929,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                                         context,
                                         list,
                                         index,
-                                        initialAngleKey: thumbEntries[i].key,
+                                        initialAngleKey: 'stitched',
                                       ),
                                     ),
                                   ),
@@ -1483,25 +2132,33 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                 )
               else
                 Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.videocam_off_outlined,
-                        size: isThumbnail ? 16 : 22,
-                        color: const Color(0xFF8B909C),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        fallbackStatusText ?? label,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: isThumbnail ? 9.5 : 11,
-                          color: const Color(0xFF8B909C),
+                  child: isThumbnail
+                      ? const Icon(
+                          Icons.videocam_off_outlined,
+                          size: 16,
+                          color: Color(0xFF8B909C),
+                        )
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.videocam_off_outlined,
+                              size: 22,
+                              color: Color(0xFF8B909C),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              fallbackStatusText ?? label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF8B909C),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
             // Corner mark for when it was last updated (Now, 2m, 5m, etc.)
             if (ageMark.isNotEmpty && hasFile)
