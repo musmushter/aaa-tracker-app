@@ -18,13 +18,28 @@ class ParsedChatterEta {
   final int lowTargetEpochMs;
   final int highTargetEpochMs;
 
-  /// Formats the ETA target window in `America/Chicago` Central Time
-  /// (e.g. `2:15 PM` or `2:15 PM–2:30 PM`).
+  /// Formats the ETA target window in the account's timezone
+  /// (e.g. `7:34 PM` or `6:50–6:55 PM`).
   String formatWindowCentral() {
-    final loStr = FslTimeUtils.formatCentralTime(lowTargetEpochMs);
-    final hiStr = FslTimeUtils.formatCentralTime(highTargetEpochMs);
+    final loStr = FslTimeUtils.formatCentralTime(
+      lowTargetEpochMs,
+      stripLeadingZero: true,
+    );
+    final hiStr = FslTimeUtils.formatCentralTime(
+      highTargetEpochMs,
+      stripLeadingZero: true,
+    );
     if ((highTargetEpochMs - lowTargetEpochMs).abs() < 60000) {
       return hiStr;
+    }
+    // If both endpoints share the same AM/PM suffix (e.g. "6:50 PM" and "6:55 PM"),
+    // render as "6:50–6:55 PM" (or keep full if crossing AM/PM).
+    final loParts = loStr.split(' ');
+    final hiParts = hiStr.split(' ');
+    if (loParts.length == 2 &&
+        hiParts.length == 2 &&
+        loParts[1] == hiParts[1]) {
+      return '${loParts[0]}–$hiStr';
     }
     return '$loStr–$hiStr';
   }

@@ -181,6 +181,7 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
     final availableEntries = v.availableCameraEntries;
     final ageLabel = v.shortAgeLabel();
     final driverName = v.effectiveDriverName;
+    final isWide = MediaQuery.sizeOf(context).width >= 700;
 
     return Focus(
       focusNode: _keyboardFocusNode,
@@ -191,9 +192,9 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
         excluding: true,
         child: Dialog(
           backgroundColor: const Color(0xFF14161A),
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 28,
-            vertical: 22,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: isWide ? 28 : 12,
+            vertical: isWide ? 22 : 16,
           ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
@@ -207,7 +208,7 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                 // Top Bar
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
+                    horizontal: 14,
                     vertical: 10,
                   ),
                   decoration: const BoxDecoration(
@@ -217,46 +218,104 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                     ),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                Flexible(
-                                  child: Text(
-                                    v.name,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFFE8E8E8),
-                                    ),
+                                Text(
+                                  v.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFE8E8E8),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
                                 _buildMetaBadge(
                                   v.organizationName,
                                   const Color(0xFF3B82F6),
                                 ),
-                                if (v.associationGroup.isNotEmpty) ...[
-                                  const SizedBox(width: 6),
+                                if (v.associationGroup.isNotEmpty &&
+                                    v.associationGroup.toUpperCase() !=
+                                        v.organizationName.toUpperCase())
                                   _buildMetaBadge(
                                     v.associationGroup,
                                     const Color(0xFF10B981),
                                   ),
-                                ],
-                                if (ageLabel.isNotEmpty) ...[
-                                  const SizedBox(width: 8),
+                                if (ageLabel.isNotEmpty)
                                   _buildCornerAgeBadge(ageLabel),
-                                ],
+                                if (_vehicles.length > 1)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (!isWide)
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 28,
+                                            minHeight: 28,
+                                          ),
+                                          padding: EdgeInsets.zero,
+                                          onPressed: () => _stepVehicle(-1),
+                                          icon: const Icon(
+                                            Icons.chevron_left,
+                                            size: 20,
+                                          ),
+                                        ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF14161A),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: const Color(0xFF33373F),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isWide
+                                              ? 'Truck ${_currentIndex + 1} / ${_vehicles.length}  (← / →)'
+                                              : '${_currentIndex + 1}/${_vehicles.length}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFFE8E8E8),
+                                          ),
+                                        ),
+                                      ),
+                                      if (!isWide)
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 28,
+                                            minHeight: 28,
+                                          ),
+                                          padding: EdgeInsets.zero,
+                                          onPressed: () => _stepVehicle(1),
+                                          icon: const Icon(
+                                            Icons.chevron_right,
+                                            size: 20,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 3),
                             Text(
                               '${driverName != null ? "Driver: $driverName  •  " : ""}${v.statusText}',
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Color(0xFF8B909C),
@@ -265,29 +324,9 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                           ],
                         ),
                       ),
-                      if (_vehicles.length > 1) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF14161A),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFF33373F)),
-                          ),
-                          child: Text(
-                            'Truck ${_currentIndex + 1} / ${_vehicles.length}  (← / →)',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFE8E8E8),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                      ],
+                      const SizedBox(width: 6),
                       IconButton(
+                        visualDensity: VisualDensity.compact,
                         tooltip: 'Close (Esc)',
                         onPressed: () => Navigator.of(context).pop(),
                         icon: const Icon(Icons.close),
@@ -351,14 +390,16 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                   children: [
                     Padding(
                       padding: EdgeInsets.symmetric(
-                        horizontal: _vehicles.length > 1 ? 68 : 20,
-                        vertical: 14,
+                        horizontal: isWide
+                            ? (_vehicles.length > 1 ? 68 : 20)
+                            : 10,
+                        vertical: isWide ? 14 : 8,
                       ),
                       child: _selectedAngle == 'stitched'
                           ? _buildStitchedStage(v, ageLabel)
                           : _buildSingleAngleStage(v, ageLabel),
                     ),
-                    if (_vehicles.length > 1) ...[
+                    if (_vehicles.length > 1 && isWide) ...[
                       Positioned(
                         left: 14,
                         child: IconButton.filledTonal(
@@ -382,8 +423,9 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
 
               // Bottom Action Bar
               Container(
+                width: double.infinity,
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
+                  horizontal: 14,
                   vertical: 10,
                 ),
                 decoration: const BoxDecoration(
@@ -392,15 +434,22 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                     top: BorderSide(color: Color(0xFF33373F)),
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Expanded(
-                      child: SelectableText(
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: isWide ? 520 : 280,
+                      ),
+                      child: Text(
                         driverName != null
                             ? 'Driver: $driverName  •  ${v.liveMotiveUrl}'
                             : v.liveMotiveUrl,
                         maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12,
                           color: Color(0xFF8B909C),
@@ -408,14 +457,15 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFF46A758),
                             foregroundColor: Colors.white,
+                            visualDensity: VisualDensity.compact,
                           ),
                           onPressed: _isReporting
                               ? null
@@ -429,11 +479,15 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : const Icon(Icons.send_rounded, size: 16),
-                          label: const Text('Report (Copy Image + Info)'),
+                              : const Icon(Icons.send_rounded, size: 15),
+                          label: Text(
+                            isWide ? 'Report (Copy Image + Info)' : 'Report',
+                          ),
                         ),
-                        const SizedBox(width: 10),
                         OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
                           onPressed: _isRefreshingCam
                               ? null
                               : _triggerRefreshCam,
@@ -445,8 +499,10 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Icon(Icons.refresh, size: 16),
-                          label: const Text('Refresh Cam (R)'),
+                              : const Icon(Icons.refresh, size: 15),
+                          label: Text(
+                            isWide ? 'Refresh Cam (R)' : 'Refresh Cam',
+                          ),
                         ),
                       ],
                     ),
@@ -469,7 +525,7 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
     final mainEntry = v.mainCameraEntry;
     final thumbs = v.thumbnailCameraEntries;
 
-    if (mainEntry == null || !File(mainEntry.path).existsSync()) {
+    if (mainEntry == null || mainEntry.path.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -523,6 +579,8 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                                 setState(() => _selectedAngle = thumbs[i].key),
                             child: _buildCameraFrame(
                               filePath: thumbs[i].path,
+                              revisionToken: v.lastRefreshedEpochMs,
+                              cacheWidth: 480,
                               label: thumbs[i].label,
                               ageLabel: ageLabel,
                               fit: BoxFit.contain,
@@ -542,6 +600,8 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
                   aspectRatio: 16 / 9,
                   child: _buildCameraFrame(
                     filePath: mainEntry.path,
+                    revisionToken: v.lastRefreshedEpochMs,
+                    cacheWidth: 1280,
                     label: mainEntry.label,
                     ageLabel: ageLabel,
                     fit: BoxFit.contain,
@@ -560,7 +620,7 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
         v.cameraPathsByAngle[_selectedAngle] ?? v.mainCameraEntry?.path;
     final label = MotiveVehicle.labelForAngle(_selectedAngle);
 
-    if (path == null || !File(path).existsSync()) {
+    if (path == null || path.isEmpty) {
       return const Center(
         child: Text(
           'No snapshot captured yet for this camera angle.',
@@ -577,6 +637,8 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
           aspectRatio: 16 / 9,
           child: _buildCameraFrame(
             filePath: path,
+            revisionToken: v.lastRefreshedEpochMs,
+            cacheWidth: 1280,
             label: label,
             ageLabel: ageLabel,
             fit: BoxFit.contain,
@@ -588,6 +650,8 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
 
   Widget _buildCameraFrame({
     required String filePath,
+    required int? revisionToken,
+    required int cacheWidth,
     required String label,
     required String ageLabel,
     required BoxFit fit,
@@ -604,7 +668,9 @@ class _CameraLightboxDialogState extends State<CameraLightboxDialog> {
         children: [
           Image.file(
             File(filePath),
-            key: ValueKey('$filePath-${File(filePath).lastModifiedSync().millisecondsSinceEpoch}'),
+            key: ValueKey('$filePath-${revisionToken ?? 0}'),
+            cacheWidth: cacheWidth,
+            gaplessPlayback: true,
             fit: fit,
           ),
           if (ageLabel.isNotEmpty)

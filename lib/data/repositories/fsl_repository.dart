@@ -642,15 +642,23 @@ class FslRepository {
 
       if (isTerminalStatus(appt.status)) continue;
       if (!_activeStatuses.contains(appt.status)) continue;
+      if (_isFutureDay(appt, nowMs)) continue;
 
-      // Filter out stale Scheduled ghost calls (> 3h past scheduled start)
-      // and future day calls
-      if (appt.status == 'Scheduled' && appt.schedStartWallMs != null) {
+      if (appt.schedStartWallMs != null) {
         final schedEpoch = FslTimeUtils.sfWallClockMsToEpochMs(
           appt.schedStartWallMs!,
         );
-        if ((nowMs - schedEpoch) > 3 * 3600 * 1000) continue;
-        if (_isFutureDay(appt, nowMs)) continue;
+        // Filter out stale Scheduled ghost calls (> 3h past scheduled start)
+        if (appt.status == 'Scheduled' &&
+            (nowMs - schedEpoch) > 3 * 3600 * 1000) {
+          continue;
+        }
+        // Filter out abandoned old calls (> 6h past scheduled start with no update in > 3h)
+        final lastModEpoch = appt.lastModifiedEpochMs ?? schedEpoch;
+        if ((nowMs - schedEpoch) > 6 * 3600 * 1000 &&
+            (nowMs - lastModEpoch) > 3 * 3600 * 1000) {
+          continue;
+        }
       }
 
       byResource.putIfAbsent(rid, () => []).add(appt);
@@ -666,6 +674,7 @@ class FslRepository {
 
       final selected = _selectPrimaryAppointmentForDriver(candidates);
       final primary = selected.primary;
+      if (primary == null) continue;
       final isChainSecond = selected.isChainSecondLeg;
 
       final resource = _resourcesById[resourceId];
@@ -1159,8 +1168,13 @@ class FslRepository {
 
   bool _isFutureDay(FslServiceAppointmentDto appt, int nowMs) {
     if (appt.schedStartWallMs == null) return false;
-    final dayBounds = FslTimeUtils.currentCentralDayBoundsWallClockMs();
-    return appt.schedStartWallMs! > dayBounds.maxDateMs;
+    final schedEpoch = FslTimeUtils.sfWallClockMsToEpochMs(
+      appt.schedStartWallMs!,
+    );
+    return !FslTimeUtils.isSameOrEarlierCentralDay(
+      schedEpoch,
+      nowEpochMs: nowMs,
+    );
   }
 
   FslServiceAppointmentDto? _findMateAppointment(
@@ -1212,65 +1226,137 @@ class FslRepository {
     return _dropoffCacheBySaId[partner.id];
   }
 
-  /// Selects the current active appointment for a driver, handling 2-leg tow
-  /// pairs ("Immediately Follow").
+  /// Selects the current active appointment for a driver, matching the original
+  /// `tracker.py` `first_service()` logic:
+  /// - Pairs up `Immediately Follow` tow legs: if both are active, excludes the
+  ///   second leg unless the head is still `Dispatched` while the second has
+  ///   progressed (`En Route`/`On Location`/`Tow Loaded`/`In Tow`).
+  /// - When a driver has multiple calls and one is actively being worked
+  ///   (`En Route`/`On Location`/`Tow Loaded`/`In Tow`/`Dispatched`) while an
+  ///   older unstarted `Scheduled` call is lingering behind it, prefers the
+  ///   active call over the lingering `Scheduled` call.
+  /// - If the selected call's `Immediately Follow` mate is already in `In Tow`
+  ///   or `Tow Complete` (e.g. first leg left behind at `Tow Loaded` when the
+  ///   tow completed), returns `null` so the finished call is dropped.
   ({
-    FslServiceAppointmentDto primary,
+    FslServiceAppointmentDto? primary,
     FslServiceAppointmentDto? mate,
     bool isChainSecondLeg,
   })
   _selectPrimaryAppointmentForDriver(
     List<FslServiceAppointmentDto> candidates,
   ) {
-    if (candidates.length == 1) {
-      final single = candidates.first;
-      final mate = _findMateAppointment(single);
-      final isSecond =
-          mate != null &&
-          isTerminalStatus(mate.status) &&
-          (mate.schedStartWallMs ?? 0) <= (single.schedStartWallMs ?? 0);
-      return (
-        primary: single,
-        mate: mate,
-        isChainSecondLeg: isSecond,
-      );
+    int parseApptNum(FslServiceAppointmentDto s) {
+      final digits = s.appointmentNumber.replaceAll(RegExp(r'[^0-9]'), '');
+      return int.tryParse(digits) ?? 0;
     }
 
-    final sorted = [...candidates]..sort((a, b) {
+    int compareSchedAndAppt(
+      FslServiceAppointmentDto a,
+      FslServiceAppointmentDto b,
+    ) {
+      final sa = a.schedStartWallMs ?? 0;
+      final sb = b.schedStartWallMs ?? 0;
+      if (sa != sb) return sa.compareTo(sb);
+      final na = parseApptNum(a);
+      final nb = parseApptNum(b);
+      if (na != nb) return na.compareTo(nb);
+      return a.appointmentNumber.compareTo(b.appointmentNumber);
+    }
+
+    const progressedStatuses = {
+      'En Route',
+      'On Location',
+      'Tow Loaded',
+      'In Tow',
+    };
+
+    final byId = <String, FslServiceAppointmentDto>{
+      for (final c in candidates) c.id: c,
+    };
+    final excludedIds = <String>{};
+    final chainSecondIds = <String>{};
+    final processedIds = <String>{};
+
+    for (final s in candidates) {
+      if (processedIds.contains(s.id)) continue;
+      final relId = s.relatedService1Id ?? s.parentTowSaId;
+      final isFollow =
+          (s.dependencyType ?? '').toLowerCase().contains('follow') ||
+          s.parentTowSaId != null;
+      if (relId == null ||
+          !isFollow ||
+          !byId.containsKey(relId) ||
+          processedIds.contains(relId)) {
+        continue;
+      }
+      final mate = byId[relId]!;
+      processedIds.add(s.id);
+      processedIds.add(mate.id);
+
+      final isMateHead = compareSchedAndAppt(mate, s) <= 0;
+      final head = isMateHead ? mate : s;
+      final second = isMateHead ? s : mate;
+
+      if (head.status == 'Dispatched' &&
+          progressedStatuses.contains(second.status)) {
+        // Second leg is the live one
+        excludedIds.add(head.id);
+        chainSecondIds.add(second.id);
+      } else {
+        excludedIds.add(second.id);
+      }
+    }
+
+    var remaining = candidates
+        .where((c) => !excludedIds.contains(c.id))
+        .toList();
+    if (remaining.isEmpty) {
+      return (primary: null, mate: null, isChainSecondLeg: false);
+    }
+
+    // If any candidate is actively dispatched/being worked, drop unstarted 'Scheduled'
+    // candidates so a lingering past-due Scheduled call never hides a driver's live call
+    // or vice-versa.
+    final hasWorkingCall = remaining.any((c) => c.status != 'Scheduled');
+    if (hasWorkingCall) {
+      remaining = remaining.where((c) => c.status != 'Scheduled').toList();
+    }
+
+    // Sort remaining active calls: progressed/dispatched status rank first, then earliest schedStart
+    remaining.sort((a, b) {
       final rankA = _statusPriorityRank(a.status);
       final rankB = _statusPriorityRank(b.status);
       if (rankA != rankB) return rankA.compareTo(rankB);
-      final startA = a.schedStartWallMs ?? 0;
-      final startB = b.schedStartWallMs ?? 0;
-      if (startA != startB) return startA.compareTo(startB);
-      return a.appointmentNumber.compareTo(b.appointmentNumber);
+      return compareSchedAndAppt(a, b);
     });
 
-    final first = sorted.first;
-    final second = sorted[1];
+    final primary = remaining.first;
+    final mate = _findMateAppointment(primary);
 
-    // Check if first and second are a 2-leg tow pair
-    final isPair =
-        (first.parentRecordId != null &&
-            first.parentRecordId == second.parentRecordId) ||
-        first.parentTowSaId == second.id ||
-        second.parentTowSaId == first.id ||
-        first.relatedService1Id == second.id ||
-        second.relatedService1Id == first.id ||
-        (first.callId != null && first.callId == second.callId);
-
-    if (isPair) {
-      final isSecondLeg =
-          first.parentTowSaId != null ||
-          ((first.schedStartWallMs ?? 0) > (second.schedStartWallMs ?? 0));
-      return (
-        primary: first,
-        mate: second,
-        isChainSecondLeg: isSecondLeg,
-      );
+    // If this leg is stuck at 'Tow Loaded' or 'On Location' while its destination tow leg
+    // is already 'Tow Complete' or 'Cleared', the tow is finished!
+    if (mate != null && isTerminalStatus(mate.status)) {
+      final isPrimaryEarlierLeg = compareSchedAndAppt(primary, mate) <= 0;
+      if (isPrimaryEarlierLeg &&
+          (primary.status == 'Tow Loaded' ||
+              primary.status == 'On Location' ||
+              primary.status == 'In Tow')) {
+        return (primary: null, mate: mate, isChainSecondLeg: false);
+      }
     }
 
-    return (primary: first, mate: null, isChainSecondLeg: false);
+    final isSecond =
+        chainSecondIds.contains(primary.id) ||
+        (mate != null &&
+            isTerminalStatus(mate.status) &&
+            compareSchedAndAppt(mate, primary) <= 0);
+
+    return (
+      primary: primary,
+      mate: mate,
+      isChainSecondLeg: isSecond,
+    );
   }
 
   int _statusPriorityRank(String status) {

@@ -167,12 +167,15 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
-                        'FSL Dispatch Tracker',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFFE8E8E8),
+                      const Flexible(
+                        child: Text(
+                          'FSL Dispatch Tracker',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFE8E8E8),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -205,12 +208,17 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
                     runSpacing: 8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Text(
-                        '${allRows.length} active',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF8B909C),
-                        ),
+                      ValueListenableBuilder<int>(
+                        valueListenable: vm.clockTickNotifier,
+                        builder: (context, _, _) {
+                          return Text(
+                            '${vm.accountClockText}  •  ${allRows.length} active',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF8B909C),
+                            ),
+                          );
+                        },
                       ),
                       if (vm.lastFslUpdatedLabel != null)
                         Text(
@@ -351,7 +359,7 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        const baseWidth = 1636.0;
+                        const baseWidth = 1480.0;
                         final tableWidth = math.max(
                           constraints.maxWidth.isFinite
                               ? constraints.maxWidth
@@ -477,19 +485,19 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
           ),
           child: Row(
             children: [
-              _headerCell('Driver', width: 225 * scale),
-              _headerCell('Call', width: 100 * scale),
-              _headerCell('Type', width: 115 * scale),
-              _headerCell('Status', width: 96 * scale),
-              _headerCell('Movement', width: 115 * scale),
-              _headerCell('In status', width: 76 * scale, alignRight: true),
-              _headerCell('ETA (from feed)', width: 175 * scale),
+              _headerCell('Driver', width: 280 * scale),
+              _headerCell('Call', width: 82 * scale),
+              _headerCell('Type', width: 105 * scale),
+              _headerCell('Status', width: 92 * scale),
+              _headerCell('Movement', width: 98 * scale),
+              _headerCell('In status', width: 70 * scale, alignRight: true),
+              _headerCell('ETA', width: 98 * scale),
               _headerCell('Vehicle', width: 145 * scale),
-              _headerCell('Address', width: 235 * scale),
-              _headerCell('Dist (km)', width: 72 * scale, alignRight: true),
-              _headerCell('GPS age', width: 68 * scale, alignRight: true),
-              _headerCell('Flags', width: 140 * scale),
-              _headerCell('Report', width: 74 * scale),
+              _headerCell('Address', width: 220 * scale),
+              _headerCell('Dist (km)', width: 64 * scale, alignRight: true),
+              _headerCell('GPS age', width: 62 * scale, alignRight: true),
+              _headerCell('Flags', width: 100 * scale),
+              _headerCell('', width: 64 * scale),
             ],
           ),
         ),
@@ -551,11 +559,9 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
     required double scale,
   }) {
     final hasAlarm = r.alerts.isNotEmpty;
-    final hasWarn = !hasAlarm &&
-        (r.etaIsStale || r.isChainSecondLeg || r.isRedAlert);
-    final Color? rowBg = hasAlarm
-        ? const Color(0xFF3A1517)
-        : (hasWarn ? const Color(0xFF33290F) : null);
+    // Match original dashboard.html: only active alerts highlight the row (#3A1517);
+    // RED ALERT services use the redmark badge in Flags without a yellow row highlight.
+    final Color? rowBg = hasAlarm ? const Color(0xFF3A1517) : null;
 
     final link = r.linkedTruck;
     final isCopied = _recentlyCopiedCallIds.contains(r.serviceAppointmentId);
@@ -569,137 +575,146 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 1. Driver (Name + Phones + Linked Motive Truck)
+          // 1. Driver (Name + Cam badge inline on Row 1, compact phones on Row 2)
           _dataCell(
-            width: 225 * scale,
+            width: 280 * scale,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  r.driverCleanName,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFE8E8E8),
-                  ),
-                ),
-                if (r.driverPhones.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  PhoneChipsBar(phones: r.driverPhones, compact: true),
-                ],
-                if (link != null) ...[
-                  const SizedBox(height: 3),
-                  InkWell(
-                    onTap: () => _openTruckCameraPopup(
-                      context,
-                      link.motiveVehicleId,
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      r.driverCleanName,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFE8E8E8),
+                      ),
                     ),
-                    borderRadius: BorderRadius.circular(3),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0x2E46A758),
-                        borderRadius: BorderRadius.circular(3),
-                        border: Border.all(
-                          color: const Color(0xFF46A758).withValues(alpha: 0.5),
+                    if (link != null)
+                      InkWell(
+                        onTap: () => _openTruckCameraPopup(
+                          context,
+                          link.motiveVehicleId,
                         ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.videocam_rounded,
-                            size: 11,
-                            color: Color(0xFF86EFAC),
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
                           ),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              'Cam: ${link.motiveUnitNumber}',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF86EFAC),
-                              ),
+                          decoration: BoxDecoration(
+                            color: const Color(0x2E46A758),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: const Color(
+                                0xFF46A758,
+                              ).withValues(alpha: 0.5),
                             ),
                           ),
-                        ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.videocam_rounded,
+                                size: 10.5,
+                                color: Color(0xFF86EFAC),
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                link.motiveUnitNumber,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF86EFAC),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
+                ),
+                if (r.driverPhones.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  PhoneChipsBar(phones: r.driverPhones, compact: true),
                 ],
               ],
             ),
           ),
 
-          // 2. Call
+          // 2. Call (Single compact line like original dashboard.html, SA number on tooltip)
           _dataCell(
-            width: 100 * scale,
-            child: InkWell(
-              onTap: () => _copyText(context, r.callId, 'Call ID'),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    r.callId,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFFE8E8E8),
-                    ),
-                  ),
-                  if (r.appointmentNumber.isNotEmpty)
+            width: 82 * scale,
+            child: Tooltip(
+              message: r.appointmentNumber.isNotEmpty
+                  ? '${r.callId} (${r.appointmentNumber})'
+                  : r.callId,
+              child: InkWell(
+                onTap: () => _copyText(context, r.callId, 'Call ID'),
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
                     Text(
-                      r.appointmentNumber,
+                      r.callId,
                       style: const TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontFamily: 'monospace',
-                        color: Color(0xFF8B909C),
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFE8E8E8),
                       ),
                     ),
-                ],
+                    if (r.isChainSecondLeg)
+                      _pill(
+                        '2nd',
+                        fg: const Color(0xFFFF7D81),
+                        bg: const Color(0x22E5484D),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
 
           // 3. Type
           _dataCell(
-            width: 115 * scale,
+            width: 105 * scale,
             child: Text(
-              r.workType.isNotEmpty ? r.workType : '—',
+              r.workType.isNotEmpty ? r.workType : '–',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 12, color: Color(0xFFE8E8E8)),
             ),
           ),
 
           // 4. Status
           _dataCell(
-            width: 96 * scale,
+            width: 92 * scale,
             child: _buildStatusPill(r.status),
           ),
 
           // 5. Movement
           _dataCell(
-            width: 115 * scale,
+            width: 98 * scale,
             child: _buildMovementPill(r.movementState, r.movementDurationMin),
           ),
 
           // 6. In status
           _dataCell(
-            width: 76 * scale,
+            width: 70 * scale,
             alignRight: true,
             child: _buildInStatusCell(r.statusDurationMin),
           ),
 
-          // 7. ETA (from feed)
+          // 7. ETA (Only actual target time, e.g. "7:34 PM" or "6:50–6:55 PM")
           _dataCell(
-            width: 175 * scale,
+            width: 98 * scale,
             child: _buildEtaCell(r),
           ),
 
@@ -709,14 +724,16 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
             child: Text(
               (r.memberVehicle != null && r.memberVehicle!.isNotEmpty)
                   ? r.memberVehicle!
-                  : '—',
+                  : '–',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 12, color: Color(0xFFE8E8E8)),
             ),
           ),
 
           // 9. Address (Pickup + Drop-off)
           _dataCell(
-            width: 235 * scale,
+            width: 220 * scale,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -724,7 +741,9 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
                 Text(
                   (r.pickupAddress != null && r.pickupAddress!.isNotEmpty)
                       ? r.pickupAddress!
-                      : '—',
+                      : '–',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12,
                     color: Color(0xFFE8E8E8),
@@ -732,12 +751,14 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
                 ),
                 if (r.dropoffAddress != null &&
                     r.dropoffAddress!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
-                    '↳ Drop-off: ${r.dropoffAddress}',
+                    '↓ ${r.dropoffAddress}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 11,
-                      color: Color(0xFF93C5FD),
+                      color: Color(0xFF8B909C),
                     ),
                   ),
                 ],
@@ -747,71 +768,71 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
 
           // 10. Dist (km)
           _dataCell(
-            width: 72 * scale,
+            width: 64 * scale,
             alignRight: true,
             child: Text(
               r.distanceToCallKm != null
                   ? r.distanceToCallKm!.toStringAsFixed(1)
-                  : '—',
-              style: TextStyle(
+                  : '–',
+              style: const TextStyle(
                 fontSize: 12,
                 fontFamily: 'monospace',
-                color: (r.distanceToCallKm != null && r.distanceToCallKm! > 2.0)
-                    ? const Color(0xFFFCD34D)
-                    : const Color(0xFFE8E8E8),
+                color: Color(0xFFE8E8E8),
               ),
             ),
           ),
 
-          // 11. GPS age
+          // 11. GPS age (green <=10m, red >10m matching original .ok / .stale)
           _dataCell(
-            width: 68 * scale,
+            width: 62 * scale,
             alignRight: true,
             child: Text(
-              r.gpsAgeMin != null ? '${r.gpsAgeMin!.round()}m' : '—',
+              r.gpsAgeMin != null ? '${r.gpsAgeMin!.round()}m' : '–',
               style: TextStyle(
                 fontSize: 12,
                 fontFamily: 'monospace',
-                color: (r.gpsAgeMin != null && r.gpsAgeMin! > 10)
-                    ? const Color(0xFFFCD34D)
-                    : const Color(0xFFE8E8E8),
+                fontWeight: (r.gpsAgeMin != null && r.gpsAgeMin! > 10)
+                    ? FontWeight.w700
+                    : FontWeight.normal,
+                color: r.gpsAgeMin == null
+                    ? const Color(0xFF8B909C)
+                    : (r.gpsAgeMin! > 10
+                          ? const Color(0xFFE5484D)
+                          : const Color(0xFF46A758)),
               ),
             ),
           ),
 
           // 12. Flags
           _dataCell(
-            width: 140 * scale,
+            width: 100 * scale,
             child: _buildFlagsCell(r),
           ),
 
           // 13. Report
           _dataCell(
-            width: 74 * scale,
+            width: 64 * scale,
             child: InkWell(
               onTap: () => _copyDispatchReport(context, r),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(5),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: isCopied
-                      ? const Color(0xFF1F4E29)
-                      : const Color(0xFF2B303B),
-                  borderRadius: BorderRadius.circular(4),
+                  color: const Color(0xFF1E2127),
+                  borderRadius: BorderRadius.circular(5),
                   border: Border.all(
                     color: isCopied
                         ? const Color(0xFF46A758)
-                        : const Color(0xFF4C5364),
+                        : const Color(0xFF33373F),
                   ),
                 ),
                 child: Text(
-                  isCopied ? 'Copied!' : 'Copy',
+                  isCopied ? 'Copied!' : 'Report',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w600,
                     color: isCopied
-                        ? const Color(0xFF86EFAC)
+                        ? const Color(0xFF46A758)
                         : const Color(0xFFE8E8E8),
                   ),
                 ),
@@ -831,7 +852,7 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
     return SizedBox(
       width: width,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
         child: Align(
           alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
           child: child,
@@ -841,21 +862,26 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
   }
 
   Widget _buildStatusPill(String status) {
-    final s = status.toLowerCase();
-    Color fg = const Color(0xFFE8E8E8);
-    Color bg = const Color(0x249CA3AF);
-    if (s.contains('en route')) {
-      fg = const Color(0xFF93C5FD);
-      bg = const Color(0x2E3B82F6);
-    } else if (s.contains('on location')) {
-      fg = const Color(0xFFFCD34D);
-      bg = const Color(0x2EF5A623);
-    } else if (s.contains('in tow')) {
-      fg = const Color(0xFFC4B5FD);
-      bg = const Color(0x338B5CF6);
-    } else if (s.contains('accepted') || s.contains('dispatched')) {
-      fg = const Color(0xFFD1D5DB);
-      bg = const Color(0x249CA3AF);
+    final s = status.toLowerCase().replaceAll(' ', '');
+    Color fg = const Color(0xFFB9BEC7);
+    Color bg = const Color(0x228B909C);
+    if (s.startsWith('dispatched')) {
+      fg = const Color(0xFFFF7D81);
+      bg = const Color(0x22E5484D);
+    } else if (s.startsWith('enroute')) {
+      fg = const Color(0xFF6CD96C);
+      bg = const Color(0x22228B22);
+    } else if (s.startsWith('onlocation') ||
+        s.startsWith('tow') ||
+        s.startsWith('intow')) {
+      fg = const Color(0xFF7AB3E8);
+      bg = const Color(0x223A6EA5);
+    } else if (s.startsWith('onrap')) {
+      fg = const Color(0xFFB39DDB);
+      bg = const Color(0x226B4FA0);
+    } else if (s.startsWith('spotted')) {
+      fg = const Color(0xFFFFC35C);
+      bg = const Color(0x22F5A623);
     }
     return _pill(status, fg: fg, bg: bg);
   }
@@ -863,108 +889,88 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
   Widget _buildMovementPill(String? state, int? durationMin) {
     if (state == null || state.isEmpty) {
       return const Text(
-        '—',
+        '–',
         style: TextStyle(fontSize: 12, color: Color(0xFF8B909C)),
       );
     }
-    final durStr = durationMin != null ? ' ${durationMin}m' : '';
     if (state == 'MOVING') {
       return _pill(
-        'MOVING$durStr',
-        fg: const Color(0xFF86EFAC),
-        bg: const Color(0x2E46A758),
+        'MOVING',
+        fg: const Color(0xFF6CD96C),
+        bg: const Color(0x22228B22),
+        bold: true,
       );
     }
     if (state == 'STANDSTILL') {
       return _pill(
-        'STANDSTILL$durStr',
-        fg: const Color(0xFFFCD34D),
-        bg: const Color(0x2EF5A623),
+        'STANDSTILL',
+        fg: const Color(0xFFFF7D81),
+        bg: const Color(0x22E5484D),
+        bold: true,
       );
     }
-    if (state == 'AT LOC') {
+    if (state == 'AT LOC' || state == 'AT DROP OFF') {
       return _pill(
-        'AT LOC$durStr',
-        fg: const Color(0xFF93C5FD),
-        bg: const Color(0x2E3B82F6),
-      );
-    }
-    if (state == 'AT DROP OFF') {
-      return _pill(
-        'AT DROP OFF$durStr',
-        fg: const Color(0xFFC4B5FD),
-        bg: const Color(0x338B5CF6),
+        state,
+        fg: const Color(0xFF7AB3E8),
+        bg: const Color(0x223A6EA5),
+        bold: true,
       );
     }
     return Text(
-      '$state$durStr',
+      state,
       style: const TextStyle(fontSize: 11.5, color: Color(0xFFE8E8E8)),
     );
   }
 
   Widget _buildInStatusCell(double durationMin) {
     final mins = durationMin.round();
-    Color color = const Color(0xFFE8E8E8);
-    FontWeight weight = FontWeight.normal;
-    if (mins >= 25) {
-      color = const Color(0xFFFF8B8E);
-      weight = FontWeight.w700;
-    } else if (mins >= 15) {
-      color = const Color(0xFFFCD34D);
-      weight = FontWeight.w600;
-    }
+    final label = mins >= 60 ? '${mins ~/ 60}h ${mins % 60}m' : '$mins min';
     return Text(
-      '$mins min',
-      style: TextStyle(
+      label,
+      style: const TextStyle(
         fontSize: 12,
-        fontFamily: 'monospace',
-        fontWeight: weight,
-        color: color,
+        color: Color(0xFFE8E8E8),
       ),
     );
   }
 
   Widget _buildEtaCell(DispatchRow r) {
-    final text = r.etaText ?? r.etaWindowText;
-    if (text == null || text.isEmpty) {
+    final windowText = r.etaWindowText ?? r.etaText;
+    if (windowText == null || windowText.isEmpty) {
       return const Text(
-        '—',
+        '–',
         style: TextStyle(
           fontSize: 12,
-          fontFamily: 'monospace',
           color: Color(0xFF8B909C),
         ),
       );
     }
-    final display =
-        (r.etaText != null &&
-            r.etaWindowText != null &&
-            r.etaText != r.etaWindowText)
-        ? '${r.etaText} (${r.etaWindowText})'
-        : text;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          display,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontFamily: 'monospace',
-            color: r.etaIsStale
-                ? const Color(0xFFFCD34D)
-                : const Color(0xFFE8E8E8),
+    return Tooltip(
+      message: r.etaIsStale
+          ? '${r.etaText ?? windowText} (Stale: ${r.etaStaleReason ?? "check"})'
+          : (r.etaText ?? windowText),
+      child: RichText(
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        text: TextSpan(
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFFE8E8E8),
           ),
+          children: [
+            TextSpan(text: windowText),
+            if (r.etaIsStale)
+              const TextSpan(
+                text: ' *',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFE5484D),
+                ),
+              ),
+          ],
         ),
-        if (r.etaIsStale) ...[
-          const SizedBox(height: 2),
-          _pill(
-            'STALE • ${r.etaStaleReason ?? "CHECK"}',
-            fg: const Color(0xFFFCD34D),
-            bg: const Color(0x33F5A623),
-          ),
-        ],
-      ],
+      ),
     );
   }
 
@@ -972,61 +978,81 @@ class _DispatchDashboardViewState extends State<DispatchDashboardView>
     final pills = <Widget>[];
     if (r.isRedAlert) {
       pills.add(
-        _pill(
-          'RED ALERT',
-          fg: const Color(0xFFFF8B8E),
-          bg: const Color(0x38E5484D),
-        ),
-      );
-    }
-    if (r.isChainSecondLeg) {
-      pills.add(
-        _pill(
-          '2ND IN CHAIN',
-          fg: const Color(0xFFFCD34D),
-          bg: const Color(0x33F5A623),
-        ),
-      );
-    }
-    if (r.etaIsStale) {
-      pills.add(
-        _pill(
-          'STALE ETA',
-          fg: const Color(0xFFFCD34D),
-          bg: const Color(0x33F5A623),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE5484D),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: const Color(0x88FFFFFF)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0xCCE5484D),
+                blurRadius: 6,
+              ),
+            ],
+          ),
+          child: const Text(
+            'RED ALERT',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              color: Colors.white,
+            ),
+          ),
         ),
       );
     }
     for (final a in r.alerts) {
+      final label = switch (a.type) {
+        DispatchAlertType.dispatchOverdue => 'DISPATCH>10m',
+        DispatchAlertType.standingStill => 'STILL>10m',
+        DispatchAlertType.etaExpired => 'ETA LATE',
+      };
       pills.add(
-        _pill(
-          a.type.code,
-          fg: const Color(0xFFFF8B8E),
-          bg: const Color(0x38E5484D),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE5484D),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
         ),
       );
     }
     if (pills.isEmpty) {
       return const Text(
-        '—',
+        '',
         style: TextStyle(fontSize: 12, color: Color(0xFF8B909C)),
       );
     }
-    return Wrap(spacing: 4, runSpacing: 4, children: pills);
+    return Wrap(spacing: 3, runSpacing: 3, children: pills);
   }
 
-  Widget _pill(String text, {required Color fg, required Color bg}) {
+  Widget _pill(
+    String text, {
+    required Color fg,
+    required Color bg,
+    bool bold = false,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: BorderRadius.circular(9),
       ),
       child: Text(
         text,
         style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w600,
+          fontSize: 11,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
           color: fg,
         ),
       ),

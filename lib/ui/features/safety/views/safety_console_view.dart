@@ -249,17 +249,28 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
           builder: (ctx, setModalState) {
             return AlertDialog(
               backgroundColor: const Color(0xFF1E2127),
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 20,
+              ),
+              title: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     'Select Fleet Groups / Associations',
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
                     children: [
                       TextButton(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
                         onPressed: () {
                           setState(() {
                             _selectedGroups
@@ -272,6 +283,9 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                         child: const Text('Select All'),
                       ),
                       TextButton(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
                         onPressed: () {
                           setState(() => _selectedGroups.clear());
                           _saveFilterPrefs();
@@ -337,8 +351,15 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
           builder: (ctx, setModalState) {
             return AlertDialog(
               backgroundColor: const Color(0xFF1E2127),
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 20,
+              ),
+              title: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     'Filter by Organization',
@@ -409,8 +430,15 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
           builder: (ctx, setModalState) {
             return AlertDialog(
               backgroundColor: const Color(0xFF1E2127),
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 20,
+              ),
+              title: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     'Motion & Status Filters',
@@ -433,10 +461,11 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
               ),
               content: SizedBox(
                 width: 360,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                     const Padding(
                       padding: EdgeInsets.only(left: 12, bottom: 4),
                       child: Text(
@@ -522,7 +551,8 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                         setModalState(() {});
                       },
                     ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -685,6 +715,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
         : 'Filters ($activeStatusFilterCount)';
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Single Compact Toolbar Row (Search + Popover Filter Dialogs + Sort + Batch Actions)
         Container(
@@ -826,36 +857,43 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                   ),
 
                   // Sort Selector
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF14161A),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF33373F)),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<SafetySortOption>(
-                        value: _sortOption,
-                        isDense: true,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFFE8E8E8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 230),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF14161A),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFF33373F)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<SafetySortOption>(
+                          value: _sortOption,
+                          isDense: true,
+                          isExpanded: true,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFE8E8E8),
+                          ),
+                          dropdownColor: const Color(0xFF1E2127),
+                          items: SafetySortOption.values
+                              .map(
+                                (opt) => DropdownMenuItem(
+                                  value: opt,
+                                  child: Text(
+                                    opt.label,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _sortOption = val);
+                              _saveFilterPrefs();
+                            }
+                          },
                         ),
-                        dropdownColor: const Color(0xFF1E2127),
-                        items: SafetySortOption.values
-                            .map(
-                              (opt) => DropdownMenuItem(
-                                value: opt,
-                                child: Text(opt.label),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _sortOption = val);
-                            _saveFilterPrefs();
-                          }
-                        },
                       ),
                     ),
                   ),
@@ -874,10 +912,12 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                     ),
                 ],
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  // Auto-Refresh Cameras Interval Selector
+                  // Auto-Refresh Cameras Interval Selector + Countdown Timer
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
@@ -893,7 +933,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<int>(
-                        value: const {0, 2, 5, 10, 15}.contains(
+                        value: const {0, 5, 10, 15, 30}.contains(
                               vm.cameraAutoRefreshMinutes,
                             )
                             ? vm.cameraAutoRefreshMinutes
@@ -910,10 +950,6 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                             child: Text('Auto-Refresh: Off'),
                           ),
                           DropdownMenuItem(
-                            value: 2,
-                            child: Text('Auto-Refresh: 2m'),
-                          ),
-                          DropdownMenuItem(
                             value: 5,
                             child: Text('Auto-Refresh: 5m'),
                           ),
@@ -925,6 +961,10 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                             value: 15,
                             child: Text('Auto-Refresh: 15m'),
                           ),
+                          DropdownMenuItem(
+                            value: 30,
+                            child: Text('Auto-Refresh: 30m'),
+                          ),
                         ],
                         onChanged: (val) {
                           if (val != null) {
@@ -934,7 +974,44 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  ValueListenableBuilder<int>(
+                    valueListenable: vm.clockTickNotifier,
+                    builder: (context, _, _) {
+                      final countdown = vm.autoRefreshCountdownText;
+                      if (countdown == null) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF14161A),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFF3B82F6)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.timer_outlined,
+                              size: 13,
+                              color: Color(0xFF93C5FD),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Next: $countdown',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF93C5FD),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
@@ -946,7 +1023,6 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                       style: TextStyle(fontSize: 12),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   if (vm.isBatchRefreshingCameras)
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
@@ -1037,13 +1113,13 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                     final double mainCamHeight = innerCamWidth * 9.0 / 16.0;
                     final double thumbStripHeight = (mainCamHeight * 0.38)
                         .clamp(78.0, 118.0);
-                    // Header (~56) + thumbStrip + gap (6) + mainCamHeight + Footer (~44) + borders (12)
+                    // Header (~74) + thumbStrip + gap (6) + mainCamHeight + Footer (~52) + borders (12)
                     final double cardHeight =
-                        56.0 +
+                        74.0 +
                         thumbStripHeight +
                         6.0 +
                         mainCamHeight +
-                        44.0 +
+                        52.0 +
                         12.0;
 
                     return GridView.builder(
@@ -1106,39 +1182,38 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Flexible(
-                            child: Text(
-                              v.name,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13.5,
-                                color: Color(0xFFE8E8E8),
-                              ),
+                          Text(
+                            v.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              color: Color(0xFFE8E8E8),
                             ),
                           ),
-                          const SizedBox(width: 6),
                           _buildPill(
                             v.organizationName,
                             const Color(0xFF3B82F6),
                           ),
                           if (v.associationGroup.isNotEmpty &&
                               v.associationGroup.toUpperCase() !=
-                                  v.organizationName.toUpperCase()) ...[
-                            const SizedBox(width: 4),
+                                  v.organizationName.toUpperCase())
                             _buildPill(
                               v.associationGroup,
                               const Color(0xFF0EA5E9),
                             ),
-                          ],
                         ],
                       ),
                       const SizedBox(height: 2),
@@ -1198,6 +1273,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                                     child: _buildCameraBox(
                                       label: thumbEntries[i].label,
                                       filePath: thumbEntries[i].path,
+                                      revisionToken: v.lastRefreshedEpochMs,
                                       ageMark: ageLabel,
                                       isThumbnail: true,
                                       onTap: () => _openLightbox(
@@ -1217,6 +1293,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                             child: _buildCameraBox(
                               label: 'Road Cam',
                               filePath: v.roadCameraPath,
+                              revisionToken: v.lastRefreshedEpochMs,
                               ageMark: ageLabel,
                               fallbackStatusText: 'Road Cam',
                               isThumbnail: true,
@@ -1237,6 +1314,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                         child: _buildCameraBox(
                           label: mainEntry?.label ?? 'Driver Cam',
                           filePath: mainEntry?.path,
+                          revisionToken: v.lastRefreshedEpochMs,
                           ageMark: ageLabel,
                           fallbackStatusText: v.cameraStatusText,
                           isThumbnail: false,
@@ -1266,6 +1344,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                     backgroundColor: const Color(0xFF46A758),
                     foregroundColor: Colors.white,
                     visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                   ),
                   onPressed: isReporting
                       ? null
@@ -1285,40 +1364,55 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
+                Flexible(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          onPressed: () =>
+                              widget.viewModel.refreshSingleCamera(v.id),
+                          icon: const Icon(Icons.refresh, size: 14),
+                          label: const Text(
+                            'Refresh',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                      IconButton(
                         visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        tooltip: 'Inspect Fullscreen (← / →)',
+                        onPressed: () => _openLightbox(
+                          context,
+                          list,
+                          index,
+                          initialAngleKey: 'stitched',
+                        ),
+                        icon: const Icon(Icons.fullscreen, size: 18),
                       ),
-                      onPressed: () =>
-                          widget.viewModel.refreshSingleCamera(v.id),
-                      icon: const Icon(Icons.refresh, size: 14),
-                      label: const Text(
-                        'Refresh Cam',
-                        style: TextStyle(fontSize: 12),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        tooltip: 'Open Live View in Motive',
+                        onPressed: () => _openInMotiveWeb(v),
+                        icon: const Icon(Icons.open_in_new, size: 15),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Inspect Fullscreen (← / →)',
-                      onPressed: () => _openLightbox(
-                        context,
-                        list,
-                        index,
-                        initialAngleKey: 'stitched',
-                      ),
-                      icon: const Icon(Icons.fullscreen, size: 18),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Open Live View in Motive',
-                      onPressed: () => _openInMotiveWeb(v),
-                      icon: const Icon(Icons.open_in_new, size: 15),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1349,56 +1443,66 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
   Widget _buildCameraBox({
     required String label,
     required String? filePath,
+    required int? revisionToken,
     required String ageMark,
     required bool isThumbnail,
     required VoidCallback onTap,
     String? fallbackStatusText,
   }) {
-    final hasFile = filePath != null && File(filePath).existsSync();
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF0A0C0E),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: const Color(0xFF33373F)),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (hasFile)
-              Image.file(
-                File(filePath),
-                key: ValueKey(
-                  '$filePath-${File(filePath).lastModifiedSync().millisecondsSinceEpoch}',
-                ),
-                // BoxFit.contain inside a 16:9 AspectRatio container ensures 0% cropping/squishing!
-                fit: BoxFit.contain,
-              )
-            else
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
+    final hasFile = filePath != null && filePath.isNotEmpty;
+    return RepaintBoundary(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0C0E),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFF33373F)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (hasFile)
+                Image.file(
+                  File(filePath),
+                  key: ValueKey('$filePath-${revisionToken ?? 0}'),
+                  cacheWidth: isThumbnail ? 320 : 720,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.low,
+                  // BoxFit.contain inside a 16:9 AspectRatio container ensures 0% cropping/squishing!
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => Center(
+                    child: Icon(
                       Icons.videocam_off_outlined,
                       size: isThumbnail ? 16 : 22,
                       color: const Color(0xFF8B909C),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      fallbackStatusText ?? label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: isThumbnail ? 9.5 : 11,
+                  ),
+                )
+              else
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.videocam_off_outlined,
+                        size: isThumbnail ? 16 : 22,
                         color: const Color(0xFF8B909C),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        fallbackStatusText ?? label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: isThumbnail ? 9.5 : 11,
+                          color: const Color(0xFF8B909C),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             // Corner mark for when it was last updated (Now, 2m, 5m, etc.)
             if (ageMark.isNotEmpty && hasFile)
               Positioned(
@@ -1450,6 +1554,7 @@ class _SafetyConsoleViewState extends State<SafetyConsoleView>
             ),
           ],
         ),
+      ),
       ),
     );
   }

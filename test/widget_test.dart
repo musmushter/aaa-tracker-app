@@ -1,8 +1,10 @@
 import 'package:aaa_tracker_app/data/models/fsl_api_models.dart';
 import 'package:aaa_tracker_app/data/models/motive_api_models.dart';
 import 'package:aaa_tracker_app/data/repositories/fsl_repository.dart';
+import 'package:aaa_tracker_app/data/services/alert_notification_service.dart';
 import 'package:aaa_tracker_app/data/services/auth_session_service.dart';
 import 'package:aaa_tracker_app/data/services/fsl_api_client.dart';
+import 'package:aaa_tracker_app/domain/models/dispatch_alert.dart';
 import 'package:aaa_tracker_app/domain/models/dispatch_row.dart';
 import 'package:aaa_tracker_app/domain/models/driver_truck_link.dart';
 import 'package:aaa_tracker_app/domain/models/motive_vehicle.dart';
@@ -12,6 +14,7 @@ import 'package:aaa_tracker_app/domain/use_cases/fsl_chatter_parser.dart';
 import 'package:aaa_tracker_app/domain/use_cases/fsl_time_utils.dart';
 import 'package:aaa_tracker_app/domain/use_cases/motive_report_builder.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUpAll(() {
@@ -682,5 +685,52 @@ void main() {
         expect(parsed.associationGroup, equals('ALL AMERICAN'));
       },
     );
+  });
+
+  group('AlertNotificationService deduplication & preferences', () {
+    test('deduplicates repeated alerts within 15-minute cooldown and respects mute toggle', () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = AlertNotificationService();
+      await service.initialize();
+      expect(service.notificationsEnabled, isTrue);
+
+      const sampleAlert = DispatchAlert(
+        type: DispatchAlertType.dispatchOverdue,
+        driverName: 'Kevin Brooks (169)**713-555-0105',
+        driverId: '0HnDrv1',
+        callId: '600123',
+        appointmentNumber: 'SA-100',
+        status: 'Dispatched',
+        workType: 'Tow',
+        detail: 'Dispatched for 18 min without En Route',
+        sinceEpochMs: 1760940000000,
+        durationMin: 18,
+      );
+
+      // First evaluation triggers 1 new alert
+      final firstCount = await service.processAlerts([sampleAlert]);
+      expect(firstCount, equals(1));
+
+      // Immediate second evaluation with the same alert is suppressed by cooldown
+      final secondCount = await service.processAlerts([sampleAlert]);
+      expect(secondCount, equals(0));
+
+      // Disabling notifications suppresses new alerts too
+      await service.setNotificationsEnabled(false);
+      const secondAlert = DispatchAlert(
+        type: DispatchAlertType.etaExpired,
+        driverName: 'Rafael (37)',
+        driverId: '0HnDrv2',
+        callId: '600999',
+        appointmentNumber: 'SA-200',
+        status: 'En Route',
+        workType: 'Battery',
+        detail: 'ETA expired 12 min ago',
+        sinceEpochMs: 1760940000000,
+        durationMin: 12,
+      );
+      final mutedCount = await service.processAlerts([secondAlert]);
+      expect(mutedCount, equals(0));
+    });
   });
 }

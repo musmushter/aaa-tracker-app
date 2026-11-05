@@ -54,46 +54,47 @@ class PhoneChipsBar extends StatelessWidget {
     if (phones.isEmpty) return const SizedBox.shrink();
 
     return Wrap(
-      spacing: 6,
-      runSpacing: 4,
+      spacing: compact ? 4 : 6,
+      runSpacing: compact ? 2 : 4,
       children: phones.map((phone) {
         if (_isMobilePlatform) {
           return Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF334155)),
+              color: const Color(0xFF14161A),
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: const Color(0xFF33373F)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 InkWell(
                   borderRadius: const BorderRadius.horizontal(
-                    left: Radius.circular(8),
+                    left: Radius.circular(5),
                   ),
                   onTap: () => _dialPhone(context, phone),
                   child: Padding(
                     padding: EdgeInsets.symmetric(
-                      horizontal: compact ? 6 : 8,
-                      vertical: compact ? 3 : 4,
+                      horizontal: compact ? 4 : 7,
+                      vertical: compact ? 1.5 : 3,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.phone_in_talk,
-                          size: 13,
-                          color: Color(0xFF10B981),
+                          size: compact ? 10.5 : 12.5,
+                          color: const Color(0xFF46A758),
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 3),
                         Flexible(
                           child: Text(
                             phone,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: compact ? 11 : 12,
+                              fontSize: compact ? 10 : 11.5,
+                              fontFamily: 'monospace',
                               fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              color: const Color(0xFFE8E8E8),
                             ),
                           ),
                         ),
@@ -103,23 +104,23 @@ class PhoneChipsBar extends StatelessWidget {
                 ),
                 Container(
                   width: 1,
-                  height: 18,
-                  color: const Color(0xFF334155),
+                  height: compact ? 14 : 17,
+                  color: const Color(0xFF33373F),
                 ),
                 InkWell(
                   borderRadius: const BorderRadius.horizontal(
-                    right: Radius.circular(8),
+                    right: Radius.circular(5),
                   ),
                   onTap: () => _copyPhone(context, phone),
                   child: Padding(
                     padding: EdgeInsets.symmetric(
-                      horizontal: compact ? 5 : 6,
-                      vertical: compact ? 3 : 4,
+                      horizontal: compact ? 4 : 6,
+                      vertical: compact ? 1.5 : 3,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.copy,
-                      size: 12,
-                      color: Color(0xFF94A3B8),
+                      size: compact ? 10 : 11.5,
+                      color: const Color(0xFF8B909C),
                     ),
                   ),
                 ),
@@ -132,35 +133,36 @@ class PhoneChipsBar extends StatelessWidget {
         return Tooltip(
           message: 'Click to copy $phone',
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(5),
             onTap: () => _copyPhone(context, phone),
             child: Container(
               padding: EdgeInsets.symmetric(
-                horizontal: compact ? 7 : 9,
-                vertical: compact ? 3 : 4,
+                horizontal: compact ? 5 : 8,
+                vertical: compact ? 1.5 : 3,
               ),
               decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF334155)),
+                color: const Color(0xFF14161A),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: const Color(0xFF33373F)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.copy_rounded,
-                    size: 12,
-                    color: Color(0xFFF59E0B),
+                    size: compact ? 10 : 11.5,
+                    color: const Color(0xFFF5A623),
                   ),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 4),
                   Flexible(
                     child: Text(
                       phone,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: compact ? 11 : 12,
+                        fontSize: compact ? 10 : 11.5,
+                        fontFamily: 'monospace',
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFFE2E8F0),
+                        color: const Color(0xFFE8E8E8),
                       ),
                     ),
                   ),

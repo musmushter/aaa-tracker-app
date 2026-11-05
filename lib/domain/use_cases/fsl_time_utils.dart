@@ -7,12 +7,67 @@ import 'package:timezone/timezone.dart' as tz;
 class FslTimeUtils {
   static bool _tzInitialized = false;
   static late tz.Location _centralLocation;
+  static String _accountTimeZoneId = 'America/Chicago';
 
   static void ensureInitialized() {
     if (_tzInitialized) return;
     tz_data.initializeTimeZones();
     _centralLocation = tz.getLocation('America/Chicago');
     _tzInitialized = true;
+  }
+
+  /// Updates the active Salesforce account's IANA timezone (e.g. `'America/Chicago'`)
+  /// discovered from `userTimeZone` in `FSL__vf001_ServiceExpert`.
+  static void setAccountTimeZone(String? tzId) {
+    ensureInitialized();
+    if (tzId == null || tzId.trim().isEmpty) return;
+    try {
+      _centralLocation = tz.getLocation(tzId.trim());
+      _accountTimeZoneId = tzId.trim();
+    } catch (_) {
+      // Keep existing location if unknown IANA ID
+    }
+  }
+
+  static String get accountTimeZoneId => _accountTimeZoneId;
+
+  /// Returns a short display label for the account's timezone/location (e.g. `'Central'`).
+  static String get accountTimeZoneShortLabel {
+    if (_accountTimeZoneId.contains('Chicago') ||
+        _accountTimeZoneId.contains('Central')) {
+      return 'Central';
+    }
+    if (_accountTimeZoneId.contains('New_York') ||
+        _accountTimeZoneId.contains('Eastern')) {
+      return 'Eastern';
+    }
+    if (_accountTimeZoneId.contains('Denver') ||
+        _accountTimeZoneId.contains('Mountain')) {
+      return 'Mountain';
+    }
+    if (_accountTimeZoneId.contains('Los_Angeles') ||
+        _accountTimeZoneId.contains('Pacific')) {
+      return 'Pacific';
+    }
+    return _accountTimeZoneId.split('/').last.replaceAll('_', ' ');
+  }
+
+  /// Checks whether [epochMs] falls on the same or an earlier calendar day
+  /// than [nowEpochMs] in the account's timezone.
+  static bool isSameOrEarlierCentralDay(int epochMs, {int? nowEpochMs}) {
+    ensureInitialized();
+    final now = nowEpochMs ?? DateTime.now().millisecondsSinceEpoch;
+    final dt = tz.TZDateTime.fromMillisecondsSinceEpoch(
+      _centralLocation,
+      epochMs,
+    );
+    final nowDt = tz.TZDateTime.fromMillisecondsSinceEpoch(
+      _centralLocation,
+      now,
+    );
+    if (dt.year != nowDt.year) return dt.year < nowDt.year;
+    if (dt.month != nowDt.month) return dt.month < nowDt.month;
+    return dt.day <= nowDt.day;
   }
 
   /// Returns the current US-Central UTC offset in hours (e.g. -5 during CDT, -6 during CST).
@@ -89,8 +144,12 @@ class FslTimeUtils {
     );
   }
 
-  /// Formats a UTC epoch timestamp in US-Central time (`hh:mm AM/PM`).
-  static String formatCentralTime(int epochMs) {
+  /// Formats a UTC epoch timestamp in the account's timezone (`h:mm AM/PM`, e.g. `7:34 PM`).
+  static String formatCentralTime(
+    int epochMs, {
+    bool stripLeadingZero = true,
+    bool includeSeconds = false,
+  }) {
     ensureInitialized();
     final dt = tz.TZDateTime.fromMillisecondsSinceEpoch(
       _centralLocation,
@@ -98,9 +157,21 @@ class FslTimeUtils {
     );
     final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
     final amPm = dt.hour >= 12 ? 'PM' : 'AM';
-    final hStr = hour12.toString().padLeft(2, '0');
+    final hStr = stripLeadingZero
+        ? hour12.toString()
+        : hour12.toString().padLeft(2, '0');
     final mStr = dt.minute.toString().padLeft(2, '0');
+    if (includeSeconds) {
+      final sStr = dt.second.toString().padLeft(2, '0');
+      return '$hStr:$mStr:$sStr $amPm';
+    }
     return '$hStr:$mStr $amPm';
+  }
+
+  /// Formats a live clock string in the account's timezone (e.g. `Central 3:45 PM`).
+  static String formatAccountClock({int? nowEpochMs, bool includeSeconds = false}) {
+    final now = nowEpochMs ?? DateTime.now().millisecondsSinceEpoch;
+    return '$accountTimeZoneShortLabel ${formatCentralTime(now, stripLeadingZero: true, includeSeconds: includeSeconds)}';
   }
 
   static final RegExp _phoneRegex = RegExp(

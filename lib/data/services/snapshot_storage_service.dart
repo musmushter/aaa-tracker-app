@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/painting.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -52,6 +53,9 @@ class SnapshotStorageService {
     final filePath = p.join(dir.path, '${safeId}_$safeAngle.jpg');
     final file = File(filePath);
     await file.writeAsBytes(bytes, flush: true);
+    // Evict both raw FileImage and ResizeImage variants from Flutter's global
+    // imageCache so UI widgets immediately decode the newly written bytes.
+    await evictCachedFileImages(file);
     return file.path;
   }
 
@@ -66,7 +70,20 @@ class SnapshotStorageService {
     final filePath = p.join(dir.path, '${safeId}_stitched.png');
     final file = File(filePath);
     await file.writeAsBytes(pngBytes, flush: true);
+    await evictCachedFileImages(file);
     return file.path;
+  }
+
+  static const List<int> commonCacheWidths = [320, 480, 720, 960, 1280];
+
+  static Future<void> evictCachedFileImages(File file) async {
+    try {
+      final baseProvider = FileImage(file);
+      await baseProvider.evict();
+      for (final w in commonCacheWidths) {
+        await ResizeImage(baseProvider, width: w).evict();
+      }
+    } catch (_) {}
   }
 
   /// Returns existing cached snapshot paths for [vehicleId] across all angles,

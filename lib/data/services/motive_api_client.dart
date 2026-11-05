@@ -195,7 +195,35 @@ class MotiveApiClient {
       );
     }
 
-    // 2. Trigger live checkin wakeup if eldIdentifier is present
+    // 2. Capture baseline image_received_time BEFORE triggering live_checkin/refresh
+    final followUrl = Uri.parse(
+      '$_baseApiUrl/api/w3/vehicles/${vehicle.id}/follow?include_groups=true',
+    );
+    DateTime? initialReceivedTime;
+    try {
+      final baselineResp = await _http
+          .get(followUrl, headers: _buildHeaders(account))
+          .timeout(const Duration(seconds: 8));
+      if (baselineResp.statusCode == 200) {
+        final baselineJson = jsonDecode(baselineResp.body);
+        if (baselineJson is Map<String, dynamic>) {
+          final vObj =
+              (baselineJson['travel_group'] is Map<String, dynamic> &&
+                  (baselineJson['travel_group'] as Map)['vehicle']
+                      is Map<String, dynamic>)
+              ? (baselineJson['travel_group'] as Map)['vehicle']
+                    as Map<String, dynamic>
+              : (baselineJson['vehicle'] as Map<String, dynamic>? ??
+                    baselineJson);
+          initialReceivedTime = _extractCameraUrlsAndTimestamp(
+            baselineJson,
+            vObj,
+          ).receivedTime;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Trigger live checkin wakeup if eldIdentifier is present
     if (eldIdentifier != null && eldIdentifier.isNotEmpty) {
       final checkinUrl = Uri.parse('$_baseApiUrl/api/w2/live_checkin/refresh');
       try {
@@ -214,16 +242,16 @@ class MotiveApiClient {
       }
     }
 
-    // 3. Poll /api/w3/vehicles/{id}/follow?include_groups=true for fresh camera frames
-    final followUrl = Uri.parse(
-      '$_baseApiUrl/api/w3/vehicles/${vehicle.id}/follow?include_groups=true',
-    );
-    final deadline = DateTime.now().add(pollTimeout);
+    // 4. Poll /api/w3/vehicles/{id}/follow?include_groups=true until a NEW frame arrives
+    final pollStart = DateTime.now();
+    final deadline = pollStart.add(pollTimeout);
 
     final bestUrlsByAngle = <String, String>{};
     DateTime? latestFrameTime;
+    bool gotNewFrame = false;
 
     while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(seconds: 2));
       try {
         final followResp = await _http
             .get(followUrl, headers: _buildHeaders(account))
@@ -254,21 +282,37 @@ class MotiveApiClient {
             }
 
             final extracted = _extractCameraUrlsAndTimestamp(followJson, vObj);
-            bestUrlsByAngle.addAll(extracted.urlsByAngle);
+            if (extracted.urlsByAngle.isNotEmpty) {
+              bestUrlsByAngle
+                ..clear()
+                ..addAll(extracted.urlsByAngle);
+            }
             if (extracted.receivedTime != null) {
+              initialReceivedTime ??= extracted.receivedTime;
               latestFrameTime = extracted.receivedTime;
-              final ageSec = DateTime.now()
-                  .difference(extracted.receivedTime!)
-                  .inSeconds;
-              if (ageSec <= 180 && bestUrlsByAngle.isNotEmpty) {
+              if (initialReceivedTime != null &&
+                  extracted.receivedTime!.isAfter(initialReceivedTime)) {
+                gotNewFrame = true;
                 break;
               }
+            }
+
+            final ic = vObj['image_check'];
+            final pendingReq = (ic is Map<String, dynamic>)
+                ? ic['pending_image_request']
+                : null;
+            final isPending = (pendingReq is Map<String, dynamic>)
+                ? pendingReq['active'] == true
+                : null;
+            final elapsedSec = DateTime.now().difference(pollStart).inSeconds;
+            if (isPending == false &&
+                elapsedSec >= 10 &&
+                bestUrlsByAngle.isNotEmpty) {
+              break;
             }
           }
         }
       } catch (_) {}
-
-      await Future<void>.delayed(const Duration(seconds: 3));
     }
 
     final savedPathsByAngle = <String, String>{...vehicle.cameraPathsByAngle};
@@ -297,7 +341,8 @@ class MotiveApiClient {
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final frameMs = latestFrameTime?.millisecondsSinceEpoch;
-    final isFresh = frameMs != null && ((nowMs - frameMs) / 60000.0) <= 3.5;
+    final isFresh =
+        gotNewFrame || (frameMs != null && ((nowMs - frameMs) / 60000.0) <= 3.5);
 
     if (savedPathsByAngle.isEmpty) {
       final nextTimeouts = vehicle.consecutiveTimeouts + 1;

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../domain/use_cases/fsl_time_utils.dart';
 import '../models/fsl_api_models.dart';
 import 'auth_session_service.dart';
 
@@ -41,7 +42,7 @@ class FslApiClient {
     final url = Uri.parse(
       '${_authService.fslBaseUrl}/apex/FSL__vf001_ServiceExpert',
     );
-    final response = await _http
+    var response = await _http
         .get(url, headers: _buildHeaders())
         .timeout(const Duration(seconds: 20));
 
@@ -51,7 +52,25 @@ class FslApiClient {
       );
     }
 
-    final body = response.body;
+    var body = response.body;
+    // If the session cookie is valid but gated by Salesforce's FSL_User_Login_Flow
+    // (loginFlowOnly.apexp / lightningLoginFlow.apexp), complete the flow automatically
+    // over pure HTTP and reload ServiceExpert.
+    if (!body.contains('RemotingProviderImpl') &&
+        (body.contains('loginFlowOnly.apexp') ||
+            body.contains('lightningLoginFlow.apexp') ||
+            body.contains('FSL_User_Login_Flow'))) {
+      final completed = await _authService.completePendingFslLoginFlowIfNeeded();
+      if (completed) {
+        response = await _http
+            .get(url, headers: _buildHeaders())
+            .timeout(const Duration(seconds: 20));
+        if (response.statusCode == 200) {
+          body = response.body;
+        }
+      }
+    }
+
     final matches = RegExp(
       r'RemotingProviderImpl\((\{.*?\})\)\)\s*;',
       dotAll: true,
@@ -106,10 +125,19 @@ class FslApiClient {
       throw Exception('Incomplete FSL Remoting context (missing getDelta).');
     }
 
+    final tzMatch = RegExp(
+      r'''userTimeZone\s*=\s*['"]([^'"]+)['"]''',
+    ).firstMatch(body);
+    final discoveredTz = tzMatch?.group(1)?.trim();
+    if (discoveredTz != null && discoveredTz.isNotEmpty) {
+      FslTimeUtils.setAccountTimeZone(discoveredTz);
+    }
+
     return FslRemotingContext(
       vid: vid,
       methods: methods,
       fetchedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+      userTimeZone: FslTimeUtils.accountTimeZoneId,
     );
   }
 

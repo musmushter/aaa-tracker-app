@@ -269,19 +269,30 @@ class AuthSessionService {
       var currentBody = await currentRes.transform(utf8.decoder).join();
       var currentUri = loginUri;
 
-      // 3. Follow redirects (frontdoor.jsp -> ServiceExpert) collecting Set-Cookie
+        // 3. Follow redirects (frontdoor.jsp -> ServiceExpert -> lightningLoginFlow) collecting Set-Cookie
       int hops = 0;
-      while (hops < 10) {
+      while (hops < 12) {
         String? nextLocation = currentRes.headers.value(
           HttpHeaders.locationHeader,
         );
         if (nextLocation == null || nextLocation.isEmpty) {
           // Salesforce sometimes returns a 200 HTML page with window.location.replace('.../frontdoor.jsp?...')
+          // or SfdcApp.projectOneNavigator.handleRedirect('...')
           final jsRedirect = RegExp(
-            r'''(?:window\.location(?:\.href|\.replace)?|location\.replace)\s*(?:=|\()\s*['"]([^'"]+)['"]''',
+            r'''(?:window\.location(?:\.href|\.replace)?|location\.replace|handleRedirect)\s*(?:=|\()\s*['"]([^'"]+)['"]''',
           ).firstMatch(currentBody);
           if (jsRedirect != null) {
             nextLocation = jsRedirect.group(1);
+          }
+        }
+        if (nextLocation == null || nextLocation.isEmpty) {
+          // Check if we landed on loginFlowOnly.apexp with a "Finish Logging In" link to lightningLoginFlow.apexp
+          final flowLink = RegExp(
+            r'''href=["']([^"']*lightningLoginFlow\.apexp[^"']*)["']''',
+            caseSensitive: false,
+          ).firstMatch(currentBody);
+          if (flowLink != null) {
+            nextLocation = flowLink.group(1)!.replaceAll('&amp;', '&');
           }
         }
         if (nextLocation == null || nextLocation.isEmpty) break;
@@ -302,6 +313,20 @@ class AuthSessionService {
         collectCookies(currentRes);
         currentBody = await currentRes.transform(utf8.decoder).join();
         hops++;
+      }
+
+      // 4. Complete FSL_User_Login_Flow (lightningLoginFlow.apexp) if prompted
+      if (currentUri.path.contains('lightningLoginFlow.apexp') ||
+          currentBody.contains('FSL_User_Login_Flow')) {
+        await _completeSalesforceLightningLoginFlow(
+          client: client,
+          flowPageUri: currentUri,
+          flowHtml: currentBody,
+          targetBase: targetBase,
+          cookieJar: cookieJar,
+          collectCookies: collectCookies,
+          buildCookieHeader: buildCookieHeader,
+        );
       }
 
       if (!cookieJar.containsKey('sid')) {
@@ -327,6 +352,165 @@ class AuthSessionService {
         cookieHeader: buildCookieHeader(),
         baseUrl: targetBase,
       );
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Completes Salesforce's mandatory `FSL_User_Login_Flow` (`lightningLoginFlow.apexp`)
+  /// using pure HTTP (`A4J.AJAX.Submit`) so the `sid` session cookie is unlocked
+  /// for Visualforce Remoting (`FSL__vf001_ServiceExpert`) without needing a browser.
+  Future<void> _completeSalesforceLightningLoginFlow({
+    required HttpClient client,
+    required Uri flowPageUri,
+    required String flowHtml,
+    required String targetBase,
+    required Map<String, String> cookieJar,
+    required void Function(HttpClientResponse) collectCookies,
+    required String Function() buildCookieHeader,
+  }) async {
+    String extractHiddenField(String html, String idOrName) {
+      final m =
+          RegExp(
+            '(?:id|name)=["\']${RegExp.escape(idOrName)}["\'][^>]*value=["\']([^"\']*)["\']',
+            caseSensitive: false,
+          ).firstMatch(html) ??
+          RegExp(
+            'value=["\']([^"\']*)["\'][^>]*(?:id|name)=["\']${RegExp.escape(idOrName)}["\']',
+            caseSensitive: false,
+          ).firstMatch(html);
+      return m?.group(1) ?? '';
+    }
+
+    final vs = extractHiddenField(
+      flowHtml,
+      'com.salesforce.visualforce.ViewState',
+    );
+    if (vs.isEmpty) return;
+
+    final vsVer = extractHiddenField(
+      flowHtml,
+      'com.salesforce.visualforce.ViewStateVersion',
+    );
+    final vsMac = extractHiddenField(
+      flowHtml,
+      'com.salesforce.visualforce.ViewStateMAC',
+    );
+    final vsCsrf = extractHiddenField(
+      flowHtml,
+      'com.salesforce.visualforce.ViewStateCSRF',
+    );
+
+    final ajaxMatch = RegExp(
+      r'''A4J\.AJAX\.Submit\(\s*['"]([^'"]+)['"]\s*,\s*null\s*,\s*\{\s*['"]similarityGroupingId['"]\s*:\s*['"]([^'"]+)['"]''',
+    ).firstMatch(flowHtml);
+    final formId = ajaxMatch?.group(1) ?? 'thePage:j_id8';
+    final actionId = ajaxMatch?.group(2) ?? 'thePage:j_id8:j_id9';
+
+    final startPath = Uri.parse(targetBase).path;
+    final postFields = <String, String>{
+      'AJAXREQUEST': '_viewRoot',
+      formId: formId,
+      'com.salesforce.visualforce.ViewState': vs,
+      if (vsVer.isNotEmpty) 'com.salesforce.visualforce.ViewStateVersion': vsVer,
+      if (vsMac.isNotEmpty) 'com.salesforce.visualforce.ViewStateMAC': vsMac,
+      if (vsCsrf.isNotEmpty) 'com.salesforce.visualforce.ViewStateCSRF': vsCsrf,
+      actionId: actionId,
+      'url': '$startPath/apex/FSL__vf001_ServiceExpert',
+    };
+
+    final encoded = postFields.entries
+        .map(
+          (e) =>
+              '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}',
+        )
+        .join('&');
+
+    final postUri = Uri.parse('$targetBase/loginflow/lightningLoginFlow.apexp');
+    final postReq = await client.postUrl(postUri);
+    postReq.followRedirects = false;
+    postReq.headers.set(
+      HttpHeaders.contentTypeHeader,
+      'application/x-www-form-urlencoded; charset=UTF-8',
+    );
+    postReq.headers.set(HttpHeaders.refererHeader, flowPageUri.toString());
+    if (cookieJar.isNotEmpty) {
+      postReq.headers.set(HttpHeaders.cookieHeader, buildCookieHeader());
+    }
+    postReq.add(utf8.encode(encoded));
+    final postRes = await postReq.close();
+    collectCookies(postRes);
+    await postRes.drain<void>();
+  }
+
+  /// Unlocks an existing Salesforce session cookie if it is currently gated by
+  /// `loginFlowOnly.apexp` / `lightningLoginFlow.apexp`.
+  Future<bool> completePendingFslLoginFlowIfNeeded() async {
+    if (_fslCookieHeader.trim().isEmpty) return false;
+    final cookieJar = <String, String>{};
+    for (final part in _fslCookieHeader.split(';')) {
+      final idx = part.indexOf('=');
+      if (idx > 0) {
+        final k = part.substring(0, idx).trim();
+        final v = part.substring(idx + 1).trim();
+        if (k.isNotEmpty && v.isNotEmpty) {
+          cookieJar[k] = v;
+        }
+      }
+    }
+
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15)
+      ..userAgent =
+          'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36';
+
+    void collectCookies(HttpClientResponse response) {
+      for (final c in response.cookies) {
+        if (c.value.isNotEmpty && c.value != 'deleted') {
+          cookieJar[c.name] = c.value;
+        }
+      }
+    }
+
+    String buildCookieHeader() =>
+        cookieJar.entries.map((e) => '${e.key}=${e.value}').join('; ');
+
+    try {
+      final startPath = Uri.parse(_fslBaseUrl).path;
+      final retParam = Uri.encodeQueryComponent(
+        '$startPath/apex/FSL__vf001_ServiceExpert',
+      );
+      final flowUri = Uri.parse(
+        '$_fslBaseUrl/loginflow/lightningLoginFlow.apexp?retURL=$retParam&sparkID=FSL_User_Login_Flow',
+      );
+      final req = await client.getUrl(flowUri);
+      req.followRedirects = false;
+      req.headers.set(HttpHeaders.cookieHeader, buildCookieHeader());
+      final res = await req.close();
+      collectCookies(res);
+      if (res.statusCode != 200) return false;
+      final html = await res.transform(utf8.decoder).join();
+      if (!html.contains('com.salesforce.visualforce.ViewState')) {
+        return false;
+      }
+
+      await _completeSalesforceLightningLoginFlow(
+        client: client,
+        flowPageUri: flowUri,
+        flowHtml: html,
+        targetBase: _fslBaseUrl,
+        cookieJar: cookieJar,
+        collectCookies: collectCookies,
+        buildCookieHeader: buildCookieHeader,
+      );
+
+      await saveFslSession(
+        cookieHeader: buildCookieHeader(),
+        baseUrl: _fslBaseUrl,
+      );
+      return true;
+    } catch (_) {
+      return false;
     } finally {
       client.close();
     }
@@ -372,12 +556,25 @@ class AuthSessionService {
     }
 
     try {
-      // 1. Load https://account.gomotive.com/log-in to obtain authenticity_token and client_id
-      final loginPageUri = Uri.parse('https://account.gomotive.com/log-in');
-      final getReq = await client.getUrl(loginPageUri);
-      final getRes = await getReq.close();
-      collectCookies(getRes);
-      final loginHtml = await getRes.transform(utf8.decoder).join();
+      // 1. Follow redirects from https://account.gomotive.com/log-in to https://auth.gomotive.com/login...
+      //    while collecting cookies at every hop so CSRF & session cookies match.
+      var currentGetUri = Uri.parse('https://account.gomotive.com/log-in');
+      var loginHtml = '';
+      for (int hop = 0; hop < 8; hop++) {
+        final getReq = await client.getUrl(currentGetUri);
+        getReq.followRedirects = false;
+        if (cookieJar.isNotEmpty) {
+          getReq.headers.set(HttpHeaders.cookieHeader, buildCookieHeader());
+        }
+        final getRes = await getReq.close();
+        collectCookies(getRes);
+        loginHtml = await getRes.transform(utf8.decoder).join();
+        final loc = getRes.headers.value(HttpHeaders.locationHeader);
+        if (loc == null || loc.isEmpty) break;
+        final nextUri = currentGetUri.resolve(unescapeHtml(loc));
+        if (nextUri == currentGetUri) break;
+        currentGetUri = nextUri;
+      }
 
       String extractInput(String name) {
         final m =
@@ -396,8 +593,14 @@ class AuthSessionService {
       final clientId = extractInput('client_id');
       final returnUrl = extractInput('return_url');
 
-      // 2. Submit POST https://account.gomotive.com/login
-      final postUri = Uri.parse('https://account.gomotive.com/login');
+      final actionMatch = RegExp(
+        r'''<form[^>]*id=["']sign-in-page-form["'][^>]*action=["']([^"']+)["']''',
+        caseSensitive: false,
+      ).firstMatch(loginHtml);
+      final postUri = actionMatch != null
+          ? currentGetUri.resolve(unescapeHtml(actionMatch.group(1)!))
+          : currentGetUri.resolve('/login');
+
       final formFields = <String, String>{
         if (authTokenCsrf.isNotEmpty) 'authenticity_token': authTokenCsrf,
         'user_profile[email]': cleanEmail,
@@ -421,8 +624,11 @@ class AuthSessionService {
         HttpHeaders.contentTypeHeader,
         'application/x-www-form-urlencoded',
       );
-      postReq.headers.set('Origin', 'https://account.gomotive.com');
-      postReq.headers.set(HttpHeaders.refererHeader, loginPageUri.toString());
+      postReq.headers.set(
+        'Origin',
+        '${postUri.scheme}://${postUri.host}',
+      );
+      postReq.headers.set(HttpHeaders.refererHeader, currentGetUri.toString());
       if (cookieJar.isNotEmpty) {
         postReq.headers.set(HttpHeaders.cookieHeader, buildCookieHeader());
       }

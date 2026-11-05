@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../auth/views/auth_settings_dialog.dart';
 import '../../dispatch/views/callback_log_view.dart';
@@ -36,14 +37,15 @@ class AppShellView extends StatelessWidget {
 
         final fslConnected = viewModel.authService.hasFslSession;
         final motiveCount = viewModel.authService.motiveAccounts.length;
+        final topPad = MediaQuery.paddingOf(context).top;
 
         return Scaffold(
           backgroundColor: const Color(0xFF14161A),
           appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(48),
+            preferredSize: Size.fromHeight(48 + topPad),
             child: Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              height: 48 + topPad,
+              padding: EdgeInsets.only(top: topPad, left: 12, right: 12),
               decoration: const BoxDecoration(
                 color: Color(0xFF1E2127),
                 border: Border(
@@ -52,12 +54,16 @@ class AppShellView extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Text(
-                    'AAA Dispatch & Safety',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFFE8E8E8),
+                  Flexible(
+                    flex: isWide ? 0 : 1,
+                    child: Text(
+                      isWide ? 'AAA Dispatch & Safety' : 'AAA Tracker',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFE8E8E8),
+                      ),
                     ),
                   ),
                   if (isWide) ...[
@@ -84,21 +90,193 @@ class AppShellView extends StatelessWidget {
                       onTap: () => viewModel.selectTab(2),
                     ),
                   ],
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 6),
+                  // Account-Synced Clock Pill (US Central / Account Location)
+                  ValueListenableBuilder<int>(
+                    valueListenable: viewModel.clockTickNotifier,
+                    builder: (context, _, _) {
+                      final clockStr = isWide
+                          ? viewModel.accountClockText
+                          : viewModel.accountClockText.replaceFirst(
+                              'Central ',
+                              '',
+                            );
+                      return Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isWide ? 8 : 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF14161A),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFF33373F)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.schedule_rounded,
+                              size: 11,
+                              color: Color(0xFF93C5FD),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              clockStr,
+                              style: TextStyle(
+                                fontSize: isWide ? 11.5 : 10.5,
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFE8E8E8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       viewModel.statusBannerText,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         color: Color(0xFF8B909C),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
+                  // Alert Notifications & Background Keep-Alive Menu Button
+                  PopupMenuButton<String>(
+                    tooltip: 'Alerts & Background Keep-Alive',
+                    color: const Color(0xFF1E2127),
+                    onSelected: (value) {
+                      if (value == 'toggle_enabled') {
+                        viewModel.setAlertsNotificationsEnabled(
+                          !viewModel.alertsNotificationsEnabled,
+                        );
+                      } else if (value == 'toggle_sound') {
+                        viewModel.setAlertsSoundEnabled(
+                          !viewModel.alertsSoundEnabled,
+                        );
+                      } else if (value == 'toggle_keep_alive') {
+                        viewModel.setAndroidKeepAliveEnabled(
+                          !viewModel.androidKeepAliveEnabled,
+                        );
+                      } else if (value == 'unrestricted_battery') {
+                        viewModel.requestUnrestrictedAndroidBattery();
+                      } else if (value == 'test') {
+                        viewModel.sendTestAlertNotification();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      CheckedPopupMenuItem<String>(
+                        value: 'toggle_enabled',
+                        checked: viewModel.alertsNotificationsEnabled,
+                        child: const Text(
+                          'Enable Alert Notifications',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      CheckedPopupMenuItem<String>(
+                        value: 'toggle_sound',
+                        checked: viewModel.alertsSoundEnabled,
+                        child: const Text(
+                          'Play Alert Sound',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      if (!kIsWeb &&
+                          defaultTargetPlatform == TargetPlatform.android) ...[
+                        const PopupMenuDivider(),
+                        CheckedPopupMenuItem<String>(
+                          value: 'toggle_keep_alive',
+                          checked: viewModel.androidKeepAliveEnabled,
+                          child: const Text(
+                            'Keep Active in Background & Summary Notification',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'unrestricted_battery',
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                viewModel.batteryOptimizationIgnored
+                                    ? Icons.battery_charging_full_rounded
+                                    : Icons.battery_saver_rounded,
+                                size: 16,
+                                color: viewModel.batteryOptimizationIgnored
+                                    ? const Color(0xFF46A758)
+                                    : const Color(0xFFF5A623),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  viewModel.batteryOptimizationIgnored
+                                      ? 'Unrestricted Battery: Active'
+                                      : 'Allow Unrestricted Battery (No Sleep)',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const PopupMenuDivider(),
+                      const PopupMenuItem<String>(
+                        value: 'test',
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.notifications_active_outlined,
+                              size: 16,
+                              color: Color(0xFF93C5FD),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Send Test Notification',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF14161A),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: viewModel.alertsNotificationsEnabled
+                              ? const Color(0xFF46A758).withValues(alpha: 0.7)
+                              : const Color(0xFF33373F),
+                        ),
+                      ),
+                      child: Icon(
+                        viewModel.alertsNotificationsEnabled
+                            ? Icons.notifications_active_rounded
+                            : Icons.notifications_off_outlined,
+                        size: 15,
+                        color: viewModel.alertsNotificationsEnabled
+                            ? const Color(0xFF86EFAC)
+                            : const Color(0xFF8B909C),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isWide ? 12 : 8,
+                        vertical: 4,
+                      ),
                       side: BorderSide(
                         color: (fslConnected && motiveCount > 0)
                             ? const Color(0xFF46A758)
@@ -115,7 +293,9 @@ class AppShellView extends StatelessWidget {
                           : const Color(0xFFF5A623),
                     ),
                     label: Text(
-                      'Connections (FSL${motiveCount > 0 ? " + $motiveCount Orgs" : ""})',
+                      isWide
+                          ? 'Connections (FSL${motiveCount > 0 ? " + $motiveCount Orgs" : ""})'
+                          : 'FSL${motiveCount > 0 ? "+$motiveCount" : ""}',
                       style: const TextStyle(fontSize: 12),
                     ),
                   ),

@@ -143,45 +143,56 @@ class _CallbackLogViewState extends State<CallbackLogView>
                   ),
                 ),
                 if (territories.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF14161A),
-                      borderRadius: BorderRadius.circular(5),
-                      border: Border.all(color: const Color(0xFF33373F)),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String?>(
-                        value: territories.contains(_selectedTerritory)
-                            ? _selectedTerritory
-                            : null,
-                        isDense: true,
-                        hint: const Text(
-                          'All Territories',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF8B909C),
-                          ),
-                        ),
-                        dropdownColor: const Color(0xFF1E2127),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFFE8E8E8),
-                        ),
-                        items: [
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text('All Territories'),
-                          ),
-                          ...territories.map(
-                            (t) => DropdownMenuItem<String?>(
-                              value: t,
-                              child: Text(t),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 260),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF14161A),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(color: const Color(0xFF33373F)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String?>(
+                          value: territories.contains(_selectedTerritory)
+                              ? _selectedTerritory
+                              : null,
+                          isDense: true,
+                          isExpanded: true,
+                          hint: const Text(
+                            'All Territories',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF8B909C),
                             ),
                           ),
-                        ],
-                        onChanged: (val) =>
-                            setState(() => _selectedTerritory = val),
+                          dropdownColor: const Color(0xFF1E2127),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFE8E8E8),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text(
+                                'All Territories',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            ...territories.map(
+                              (t) => DropdownMenuItem<String?>(
+                                value: t,
+                                child: Text(
+                                  t,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                          onChanged: (val) =>
+                              setState(() => _selectedTerritory = val),
+                        ),
                       ),
                     ),
                   ),
@@ -315,6 +326,18 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
     );
   }
 
+  static String _shortTerritoryLabel(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return '–';
+    final upper = t.toUpperCase();
+    if (upper.contains('HOUSTON EMERGENCY AUTO RESCUE')) return 'HEART';
+    if (upper.contains('HOUSTON TOWING')) return 'Houston Towing';
+    if (upper.contains('ALL AMERICAN')) return 'All American';
+    if (upper.contains('BMW')) return 'BMW';
+    // Strip leading numeric territory code like "631252 - "
+    return t.replaceFirst(RegExp(r'^\d+\s*[-–]\s*'), '');
+  }
+
   @override
   Widget build(BuildContext context) {
     final total = widget.calls.length;
@@ -370,7 +393,7 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
                 )
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    const baseWidth = 1440.0;
+                    const baseWidth = 1320.0;
                     final tableWidth = math.max(
                       constraints.maxWidth.isFinite
                           ? constraints.maxWidth
@@ -385,19 +408,19 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
                           defaultVerticalAlignment:
                               TableCellVerticalAlignment.middle,
                           columnWidths: const {
-                            0: FixedColumnWidth(36), // Checkbox
-                            1: FixedColumnWidth(84), // Cleared
-                            2: FixedColumnWidth(104), // Call
-                            3: FixedColumnWidth(118), // Territory
+                            0: FixedColumnWidth(34), // Checkbox
+                            1: FixedColumnWidth(78), // Cleared
+                            2: FixedColumnWidth(78), // Call
+                            3: FixedColumnWidth(110), // Territory
                             4: FlexColumnWidth(1.2), // Member
-                            5: FixedColumnWidth(152), // Member phone
-                            6: FixedColumnWidth(96), // Benefit level
+                            5: FixedColumnWidth(148), // Member phone
+                            6: FixedColumnWidth(92), // Benefit level
                             7: FlexColumnWidth(1.0), // Type
                             8: FlexColumnWidth(1.3), // Vehicle
-                            9: FlexColumnWidth(1.3), // Driver
-                            10: FixedColumnWidth(96), // Member waited
-                            11: FixedColumnWidth(82), // On scene
-                            12: FixedColumnWidth(130), // Flags
+                            9: FlexColumnWidth(1.1), // Driver
+                            10: FixedColumnWidth(92), // Member waited
+                            11: FixedColumnWidth(76), // On scene
+                            12: FixedColumnWidth(116), // Flags
                           },
                           border: const TableBorder(
                             horizontalInside: BorderSide(
@@ -484,15 +507,11 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
     final isCanceled = c.isCancelled;
     final isCalled = c.calledBack;
 
-    // Match dashboard.html: tr.row-canceled { background: #3A2F14; color: #B9A77C; }
-    final Color? rowBg = isCanceled
-        ? const Color(0xFF3A2F14)
-        : (c.isRedAlert
-              ? const Color(0xFF3A1517).withValues(alpha: 0.55)
-              : null);
+    // Match original dashboard.html: only canceled rows get a row background (#3A2F14)
+    final Color? rowBg = isCanceled ? const Color(0xFF3A2F14) : null;
     final Color textColor = isCanceled
         ? const Color(0xFFB9A77C)
-        : const Color(0xFFE8E8E8);
+        : const Color(0xFFC9CDD6);
     final double opacity = isCalled ? 0.45 : 1.0;
 
     return TableRow(
@@ -503,8 +522,8 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           opacity: opacity,
           child: Center(
             child: SizedBox(
-              width: 24,
-              height: 24,
+              width: 22,
+              height: 22,
               child: Checkbox(
                 value: isCalled,
                 visualDensity: VisualDensity.compact,
@@ -518,6 +537,8 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           opacity: opacity,
           child: Text(
             clearedStr,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
               fontFamily: 'monospace',
@@ -525,48 +546,45 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
             ),
           ),
         ),
-        // 2: Call ID
+        // 2: Call ID (Single compact line, SA number in tooltip)
         _td(
           opacity: opacity,
-          child: InkWell(
-            onTap: () => _copyText(context, c.callId, 'Call ID'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  c.callId,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w600,
-                    color: textColor,
-                    decoration: isCanceled ? TextDecoration.lineThrough : null,
-                  ),
+          child: Tooltip(
+            message: c.appointmentNumber.isNotEmpty
+                ? '${c.callId} (${c.appointmentNumber})'
+                : c.callId,
+            child: InkWell(
+              onTap: () => _copyText(context, c.callId, 'Call ID'),
+              child: Text(
+                c.callId,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w700,
+                  color: textColor,
+                  decoration: isCanceled ? TextDecoration.lineThrough : null,
                 ),
-                if (c.appointmentNumber.isNotEmpty)
-                  Text(
-                    c.appointmentNumber,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontFamily: 'monospace',
-                      color: Color(0xFF8B909C),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
         ),
-        // 3: Territory
+        // 3: Territory (Short single-line badge/text, full name in tooltip)
         _td(
           opacity: opacity,
-          child: Text(
-            c.territory.isNotEmpty ? c.territory : '—',
-            style: TextStyle(
-              fontSize: 11.5,
-              color: isCanceled
-                  ? const Color(0xFFB9A77C)
-                  : const Color(0xFF93C5FD),
+          child: Tooltip(
+            message: c.territory,
+            child: Text(
+              _shortTerritoryLabel(c.territory),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: isCanceled
+                    ? const Color(0xFFB9A77C)
+                    : const Color(0xFF93C5FD),
+              ),
             ),
           ),
         ),
@@ -576,8 +594,10 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           child: Text(
             (c.memberName != null && c.memberName!.isNotEmpty)
                 ? c.memberName!
-                : '—',
-            style: TextStyle(fontSize: 12.5, color: textColor),
+                : '–',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: textColor),
           ),
         ),
         // 5: Member phone
@@ -586,7 +606,7 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           child: (c.memberPhone != null && c.memberPhone!.trim().isNotEmpty)
               ? PhoneChipsBar(phones: [c.memberPhone!], compact: true)
               : const Text(
-                  '—',
+                  '–',
                   style: TextStyle(fontSize: 12, color: Color(0xFF8B909C)),
                 ),
         ),
@@ -596,7 +616,7 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           child: (c.benefitLevel != null && c.benefitLevel!.isNotEmpty)
               ? _buildBenefitPill(c.benefitLevel!)
               : const Text(
-                  '—',
+                  '–',
                   style: TextStyle(fontSize: 12, color: Color(0xFF8B909C)),
                 ),
         ),
@@ -604,7 +624,9 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
         _td(
           opacity: opacity,
           child: Text(
-            (c.workType != null && c.workType!.isNotEmpty) ? c.workType! : '—',
+            (c.workType != null && c.workType!.isNotEmpty) ? c.workType! : '–',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, color: textColor),
           ),
         ),
@@ -614,7 +636,9 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           child: Text(
             (c.memberVehicle != null && c.memberVehicle!.isNotEmpty)
                 ? c.memberVehicle!
-                : '—',
+                : '–',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, color: textColor),
           ),
         ),
@@ -622,7 +646,9 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
         _td(
           opacity: opacity,
           child: Text(
-            c.driverName.isNotEmpty ? c.driverName : '—',
+            c.driverName.isNotEmpty ? c.driverName : '–',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, color: textColor),
           ),
         ),
@@ -632,8 +658,6 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           alignRight: true,
           child: _buildMinutesText(
             minutes: c.waitDurationMin,
-            alarmMin: 60,
-            warnMin: 30,
             defaultColor: textColor,
           ),
         ),
@@ -643,8 +667,6 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           alignRight: true,
           child: _buildMinutesText(
             minutes: c.onSceneDurationMin,
-            alarmMin: 45,
-            warnMin: 25,
             defaultColor: textColor,
           ),
         ),
@@ -653,24 +675,20 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
           opacity: opacity,
           child: Wrap(
             spacing: 4,
-            runSpacing: 4,
+            runSpacing: 3,
             children: [
               if (isCanceled)
                 _buildFlagPill(
                   'CANCELED',
-                  fg: const Color(0xFFFF8B8E),
-                  bg: const Color(0x38E5484D),
+                  fg: Colors.white,
+                  bg: const Color(0xFFE5484D),
                 ),
               if (c.isRedAlert)
                 _buildFlagPill(
                   'RED ALERT',
-                  fg: const Color(0xFFFCD34D),
-                  bg: const Color(0x33F5A623),
-                ),
-              if (!isCanceled && !c.isRedAlert)
-                const Text(
-                  '—',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF8B909C)),
+                  fg: Colors.white,
+                  bg: const Color(0xFFE5484D),
+                  outlined: true,
                 ),
             ],
           ),
@@ -687,7 +705,7 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
     return Opacity(
       opacity: opacity,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4.5),
         child: Align(
           alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
           child: child,
@@ -697,35 +715,32 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
   }
 
   Widget _buildBenefitPill(String benefit) {
-    final lower = benefit.toLowerCase();
-    Color fg = const Color(0xFFD1D5DB);
-    Color bg = const Color(0x249CA3AF);
-    if (lower.contains('premier')) {
-      fg = const Color(0xFFFCD34D);
-      bg = const Color(0x33F5A623);
-    } else if (lower.contains('plus') || lower.contains('rv')) {
-      fg = const Color(0xFF93C5FD);
-      bg = const Color(0x2E3B82F6);
-    }
-    return _buildFlagPill(benefit, fg: fg, bg: bg);
+    return Text(
+      benefit,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 12, color: Color(0xFFC9CDD6)),
+    );
   }
 
   Widget _buildFlagPill(
     String text, {
     required Color fg,
     required Color bg,
+    bool outlined = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: BorderRadius.circular(9),
+        border: outlined ? Border.all(color: const Color(0x88FFFFFF)) : null,
       ),
       child: Text(
         text,
         style: TextStyle(
           fontSize: 10.5,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: fg,
         ),
       ),
@@ -734,36 +749,25 @@ class _ClearedCallsTableSectionState extends State<ClearedCallsTableSection> {
 
   Widget _buildMinutesText({
     required int? minutes,
-    required int alarmMin,
-    required int warnMin,
     required Color defaultColor,
   }) {
     if (minutes == null) {
       return const Text(
-        '—',
+        '–',
         style: TextStyle(
           fontSize: 12,
-          fontFamily: 'monospace',
           color: Color(0xFF8B909C),
         ),
       );
     }
-    Color color = defaultColor;
-    FontWeight weight = FontWeight.normal;
-    if (minutes >= alarmMin) {
-      color = const Color(0xFFFF8B8E);
-      weight = FontWeight.w700;
-    } else if (minutes >= warnMin) {
-      color = const Color(0xFFFCD34D);
-      weight = FontWeight.w600;
-    }
+    final label = minutes >= 60
+        ? '${minutes ~/ 60}h ${minutes % 60}m'
+        : '$minutes min';
     return Text(
-      '$minutes min',
+      label,
       style: TextStyle(
         fontSize: 12,
-        fontFamily: 'monospace',
-        fontWeight: weight,
-        color: color,
+        color: defaultColor,
       ),
     );
   }

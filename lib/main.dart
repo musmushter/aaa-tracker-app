@@ -12,6 +12,9 @@ import 'ui/features/shell/views/app_shell_view.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Cap decoded image memory at 60 MB so camera grids never exhaust RAM/GPU texture cache.
+  PaintingBinding.instance.imageCache.maximumSize = 80;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 60 << 20;
   FslTimeUtils.ensureInitialized();
 
   final authService = AuthSessionService();

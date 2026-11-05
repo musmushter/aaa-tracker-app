@@ -20,11 +20,13 @@ class FslRemotingContext {
     required this.vid,
     required this.methods,
     required this.fetchedAtEpochMs,
+    this.userTimeZone = 'America/Chicago',
   });
 
   final String vid;
   final Map<String, FslRemotingMethodToken> methods;
   final int fetchedAtEpochMs;
+  final String userTimeZone;
 
   FslRemotingMethodToken? tokenFor(String methodName) => methods[methodName];
 }

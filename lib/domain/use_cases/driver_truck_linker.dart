@@ -47,10 +47,15 @@ class DriverTruckLinker {
     'chevy',
   };
 
+  static final Map<String, List<String>> _tokenCache = {};
+
   /// Extracts normalized alphabetic name tokens (ignoring call-sign numbers,
   /// unit suffixes like `-F730` or `W301`, and fleet noise words).
   static List<String> extractNameTokens(String? raw) {
     if (raw == null || raw.isEmpty) return const [];
+    final cached = _tokenCache[raw];
+    if (cached != null) return cached;
+
     var s = FslTimeUtils.cleanDriverName(raw);
     // Strip unit numbers like -F730, -P690, -AU1016, -WL282, -PR4356, W301
     s = s.replaceAll(
@@ -63,7 +68,11 @@ class DriverTruckLinker {
         .toLowerCase()
         .split(RegExp(r'[^a-z]+'))
         .where((t) => t.length >= 3 && !_noiseTokens.contains(t))
-        .toList();
+        .toList(growable: false);
+    if (_tokenCache.length > 2000) {
+      _tokenCache.clear();
+    }
+    _tokenCache[raw] = tokens;
     return tokens;
   }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../shell/view_models/app_shell_view_model.dart';
 
@@ -180,13 +181,26 @@ class _AuthSettingsDialogState extends State<AuthSettingsDialog> {
   Widget build(BuildContext context) {
     final auth = widget.viewModel.authService;
     final accounts = auth.motiveAccounts;
+    final isWide = MediaQuery.sizeOf(context).width >= 600;
+
+    // Hide desktop localhost port-9222 browser sync card on Android / iOS
+    final isDesktop =
+        !kIsWeb &&
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS;
 
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       title: const Row(
         children: [
           Icon(Icons.hub_outlined, size: 22, color: Color(0xFF38BDF8)),
           SizedBox(width: 10),
-          Text('Connections & Accounts'),
+          Flexible(
+            child: Text(
+              'Connections & Accounts',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
       content: SizedBox(
@@ -196,64 +210,69 @@ class _AuthSettingsDialogState extends State<AuthSettingsDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 1. One-click Browser Session Sync Card
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF334155)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.sync_rounded,
-                          size: 18,
-                          color: Color(0xFF38BDF8),
-                        ),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Instant Browser Sync (Recommended on Desktop)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
+              // 1. One-click Browser Session Sync Card (Desktop only)
+              if (isDesktop) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.sync_rounded,
+                            size: 18,
+                            color: Color(0xFF38BDF8),
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Instant Browser Sync (Recommended on Desktop)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Automatically grabs your active Salesforce FSL and Motive sessions from an open Chrome window (including 2FA & Remember Me sessions) — no tokens needed.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF94A3B8),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Automatically grabs your active Salesforce FSL and Motive sessions from an open Chrome window (including 2FA & Remember Me sessions) — no tokens needed.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: _isBusy ? null : _autoSyncFromBrowser,
-                          icon: const Icon(Icons.bolt, size: 16),
-                          label: const Text('Auto-Detect from Open Browser'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _isBusy ? null : _launchBrowserForSignIn,
-                          icon: const Icon(Icons.open_in_new, size: 16),
-                          label: const Text('Open Login Tabs in Browser'),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _isBusy ? null : _autoSyncFromBrowser,
+                            icon: const Icon(Icons.bolt, size: 16),
+                            label: const Text('Auto-Detect from Open Browser'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _isBusy ? null : _launchBrowserForSignIn,
+                            icon: const Icon(Icons.open_in_new, size: 16),
+                            label: const Text('Open Login Tabs in Browser'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 18),
+              ],
 
               if (_statusMessage != null) ...[
-                const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
@@ -281,26 +300,71 @@ class _AuthSettingsDialogState extends State<AuthSettingsDialog> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
               ],
 
-              const SizedBox(height: 18),
-
               // 2. Salesforce FSL Standard Login
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     'Salesforce Field Service (FSL)',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
-                  const SizedBox(width: 8),
                   _StatusBadge(isConnected: auth.hasFslSession),
                 ],
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
+              if (isWide)
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _fslUsernameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Salesforce Username',
+                          hintText: 'user@example.com',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _fslPasswordCtrl,
+                        obscureText: _obscureFslPassword,
+                        onSubmitted: (_) => _loginFslWithPassword(),
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          isDense: true,
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscureFslPassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              size: 16,
+                            ),
+                            onPressed: () => setState(
+                              () => _obscureFslPassword = !_obscureFslPassword,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _isBusy ? null : _loginFslWithPassword,
+                      child: const Text('Sign In'),
+                    ),
+                  ],
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
                       controller: _fslUsernameCtrl,
                       decoration: const InputDecoration(
                         labelText: 'Salesforce Username',
@@ -308,48 +372,54 @@ class _AuthSettingsDialogState extends State<AuthSettingsDialog> {
                         isDense: true,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _fslPasswordCtrl,
-                      obscureText: _obscureFslPassword,
-                      onSubmitted: (_) => _loginFslWithPassword(),
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        isDense: true,
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscureFslPassword
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            size: 16,
-                          ),
-                          onPressed: () => setState(
-                            () => _obscureFslPassword = !_obscureFslPassword,
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _fslPasswordCtrl,
+                            obscureText: _obscureFslPassword,
+                            onSubmitted: (_) => _loginFslWithPassword(),
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              isDense: true,
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureFslPassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  size: 16,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscureFslPassword =
+                                      !_obscureFslPassword,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _isBusy ? null : _loginFslWithPassword,
+                          child: const Text('Sign In'),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: _isBusy ? null : _loginFslWithPassword,
-                    child: const Text('Sign In'),
-                  ),
-                ],
-              ),
+                  ],
+                ),
 
               const Divider(height: 28),
 
               // 3. Motive Organizations Standard Login
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     'Motive Organizations',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
-                  const SizedBox(width: 8),
                   _StatusBadge(
                     isConnected: auth.hasMotiveSession,
                     connectedText: '${accounts.length} Connected',
@@ -389,10 +459,55 @@ class _AuthSettingsDialogState extends State<AuthSettingsDialog> {
                   ),
                 ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
+              if (isWide)
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _motiveEmailCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Motive Email',
+                          hintText: 'fleet@example.com',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _motivePasswordCtrl,
+                        obscureText: _obscureMotivePassword,
+                        onSubmitted: (_) => _loginMotiveWithPassword(),
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          isDense: true,
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscureMotivePassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              size: 16,
+                            ),
+                            onPressed: () => setState(
+                              () => _obscureMotivePassword =
+                                  !_obscureMotivePassword,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.tonal(
+                      onPressed: _isBusy ? null : _loginMotiveWithPassword,
+                      child: const Text('Sign In'),
+                    ),
+                  ],
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
                       controller: _motiveEmailCtrl,
                       decoration: const InputDecoration(
                         labelText: 'Motive Email',
@@ -400,38 +515,41 @@ class _AuthSettingsDialogState extends State<AuthSettingsDialog> {
                         isDense: true,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _motivePasswordCtrl,
-                      obscureText: _obscureMotivePassword,
-                      onSubmitted: (_) => _loginMotiveWithPassword(),
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        isDense: true,
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscureMotivePassword
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            size: 16,
-                          ),
-                          onPressed: () => setState(
-                            () =>
-                                _obscureMotivePassword = !_obscureMotivePassword,
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _motivePasswordCtrl,
+                            obscureText: _obscureMotivePassword,
+                            onSubmitted: (_) => _loginMotiveWithPassword(),
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              isDense: true,
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureMotivePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  size: 16,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscureMotivePassword =
+                                      !_obscureMotivePassword,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        FilledButton.tonal(
+                          onPressed: _isBusy ? null : _loginMotiveWithPassword,
+                          child: const Text('Sign In'),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonal(
-                    onPressed: _isBusy ? null : _loginMotiveWithPassword,
-                    child: const Text('Sign In'),
-                  ),
-                ],
-              ),
+                  ],
+                ),
 
               const SizedBox(height: 12),
 
