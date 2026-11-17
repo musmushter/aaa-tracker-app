@@ -558,6 +558,8 @@ class MotiveReportShareService {
       final res = await Process.run('powershell', [
         '-NoProfile',
         '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
         '-Sta',
         '-Command',
         setScript,

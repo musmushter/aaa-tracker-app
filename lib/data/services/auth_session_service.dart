@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/motive_api_models.dart';
 
@@ -110,9 +111,11 @@ class AuthSessionService {
 
   Future<void> _importLocalMotiveAuthFilesIfPresent() async {
     if (Platform.isAndroid || Platform.isIOS) return;
-    final home = Platform.environment['HOME'] ?? '';
+    final home =
+        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '';
     final candidateDirs = <String>[
-      if (home.isNotEmpty) '$home/Projects/motive-safety-console/data',
+      if (home.isNotEmpty)
+        p.join(home, 'Projects', 'motive-safety-console', 'data'),
       'data',
     ];
     for (final dirPath in candidateDirs) {
@@ -122,7 +125,7 @@ class AuthSessionService {
         'motive_auth.json',
         'motive_org2_auth.json',
       ]) {
-        final file = File('${dir.path}/$fileName');
+        final file = File(p.join(dir.path, fileName));
         if (!file.existsSync()) continue;
         try {
           final decoded = jsonDecode(await file.readAsString());
@@ -947,11 +950,21 @@ class AuthSessionService {
     } else if (Platform.isWindows) {
       final localAppData =
           Platform.environment['LOCALAPPDATA'] ?? r'C:\Temp';
-      final profileDir = '$localAppData\\AAATrackerChromeProfile';
+      final profileDir = p.join(localAppData, 'AAATrackerChromeProfile');
       final chromePaths = <String>[
+        p.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
         r'C:\Program Files\Google\Chrome\Application\chrome.exe',
         r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+        r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
         r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+        p.join(
+          localAppData,
+          'BraveSoftware',
+          'Brave-Browser',
+          'Application',
+          'brave.exe',
+        ),
+        r'C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe',
       ];
       for (final path in chromePaths) {
         if (File(path).existsSync()) {
@@ -965,6 +978,12 @@ class AuthSessionService {
           return;
         }
       }
+      await Process.start('cmd', [
+        '/c',
+        'start',
+        '',
+        fslUrl,
+      ], mode: ProcessStartMode.detached);
     }
   }
 

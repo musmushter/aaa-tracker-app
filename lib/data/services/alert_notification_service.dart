@@ -537,12 +537,18 @@ class AlertNotificationService {
     final psScript = '''
 \$ErrorActionPreference = 'SilentlyContinue';
 $soundLine
+\$appId = 'com.aaatracker.app';
+\$regPath = "HKCU:\\Software\\Classes\\AppUserModelId\\\$appId";
+if (-not (Test-Path \$regPath)) {
+  New-Item -Path \$regPath -Force | Out-Null;
+  New-ItemProperty -Path \$regPath -Name 'DisplayName' -Value 'AAA Tracker' -PropertyType String -Force | Out-Null;
+}
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null;
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null;
 \$xml = New-Object Windows.Data.Xml.Dom.XmlDocument;
 \$xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>$safeTitle</text><text>$safeBody</text></binding></visual></toast>');
 \$toast = [Windows.UI.Notifications.ToastNotification]::new(\$xml);
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('AAA Dispatch Tracker').Show(\$toast);
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(\$appId).Show(\$toast);
 ''';
     try {
       await Process.run(
