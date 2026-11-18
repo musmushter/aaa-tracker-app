@@ -55,6 +55,9 @@ add_subdirectory("runner")
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
+# Work around an upstream CMake bug in transitive package:jni (1.1.2) on WIN32
+# when a JDK is installed on the runner; this Windows app does not use JNI.
+set(CMAKE_DISABLE_FIND_PACKAGE_JNI TRUE)
 include(flutter/generated_plugins.cmake)
 
 
